@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: Mental Health Forum Backend
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9080/realms/mentalhealthforum
+          principal-claim-name: preferred_username
+
+keycloak:
+  auth-server-url: http://localhost:9080
+  realm: mentalhealthforum
+  resource: mhf-backend
+  credentials:
+    secret: ${MHF_BACKEND_SECRET:2uVmExC9Jm5R3whLLicrICsWuY6n4vMq}
+
+logging:
+  level:
+    org.springframework.security: INFO
+    com.mentalhealthforum: DEBUG
+
+    # -----------------------------------------------------
+    # ADD THESE LINES TO LOG KEYCLOAK'S UNDERLYING HTTP TRAFFIC
+    # -----------------------------------------------------
+    org.jboss.resteasy: DEBUG # Logs Resteasy (JAX-RS) processing details
+    org.apache.http: DEBUG     # Logs Apache HTTP client details (connection/request)
+    org.apache.http.wire: DEBUG # Logs full HTTP Request/Response bodies (CRITICAL)
+
