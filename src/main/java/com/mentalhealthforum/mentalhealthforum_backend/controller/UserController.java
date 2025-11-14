@@ -18,41 +18,14 @@ import java.net.URI;
 public class UserController {
 
     private final UserService userService;
-    private final AuthService authService;
 
     public UserController(UserService userService, AuthService authService) {
         this.userService = userService;
-        this.authService = authService;
-    }
-
-    // -------------------------------------------------------------------------
-    // MANUAL AUTHENTICATION AND TOKEN LIFECYCLE (Already Reactive)
-    // -------------------------------------------------------------------------
-
-    /**
-     * Handles manual user login (ROPC Grant). Returns Access and Refresh Tokens.
-     * The service returns Mono<JwtResponse>, which is mapped to a 200 OK Response.
-     */
-    @PostMapping("/login")
-    public Mono<ResponseEntity<JwtResponse>> login(@Valid @RequestBody LoginRequest loginRequest) {
-        return authService.authenticate(loginRequest)
-                .map(ResponseEntity::ok);
-    }
-
-    /**
-     * Exchanges an expired refresh token for a new access and refresh token pair.
-     * The service returns Mono<JwtResponse>, which is mapped to a 200 OK Response.
-     */
-    @PostMapping("/refresh")
-    public Mono<ResponseEntity<JwtResponse>> refresh(@Valid @RequestBody RefreshRequest refreshRequest) {
-        return authService.refreshTokens(refreshRequest.refreshToken())
-                .map(ResponseEntity::ok);
     }
 
     // -------------------------------------------------------------------------
     // USER MANAGEMENT (Refactored to Reactive)
     // -------------------------------------------------------------------------
-
 
     @PostMapping("/register")
     public Mono<ResponseEntity<StandardSuccessResponse<String>>> registerUser(

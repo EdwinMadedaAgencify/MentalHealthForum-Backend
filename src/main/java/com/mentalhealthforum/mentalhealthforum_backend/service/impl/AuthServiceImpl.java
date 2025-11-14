@@ -1,9 +1,13 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.JwtResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.AuthenticationFailedException;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserActionRequiredException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +20,9 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * Implementation of the AuthService using WebClient to interact with Keycloak
  * for manual authentication (ROPC Grant) and token refreshing.
@@ -24,10 +31,12 @@ import reactor.core.publisher.Mono;
 public class AuthServiceImpl implements AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final WebClient webClient;
     private final String clientId;
     private final String clientSecret;
+    private final String logoutUri;
 
     public AuthServiceImpl(
             WebClient.Builder webClientBuilder,
@@ -39,7 +48,11 @@ public class AuthServiceImpl implements AuthService {
         this.clientId = properties.getResource();
         this.clientSecret = properties.getCredentials().getSecret();
 
+        // Base URI for token and refresh endpoints
         String tokenUri = String.format("%s/realms/%s/protocol/openid-connect/token", authServerUrl, realm);
+
+        // URI for the logout/revocation endpoint
+        this.logoutUri = String.format("%s/realms/%s/protocol/openid-connect/logout", authServerUrl, realm);
 
         // WebClient MUST be built with the specific token URI
         this.webClient = webClientBuilder.baseUrl(tokenUri).build();
@@ -70,13 +83,29 @@ public class AuthServiceImpl implements AuthService {
                 .onStatus(
                         // Intercept only 4xx errors (Invalid Credentials, etc.)
                         HttpStatusCode::is4xxClientError,
-                        response -> {
-                            return response.bodyToMono(String.class)
+                        clientResponse -> {
+                            return clientResponse.bodyToMono(String.class)
                                     .doOnNext(body ->  log.error("Keycloak Login Error Response (4xx): {}", body))
                                     .flatMap(body -> {
-                                        return Mono.error(new AuthenticationFailedException(
-                                                "Authentication failed: Invalid username or password."
-                                        ));
+                                        try {
+
+                                            Map<String, String> errorBody = objectMapper.readValue(body, new TypeReference<Map<String, String>>() {});
+                                            String errorDescription = errorBody.getOrDefault("error_description", "Authentication failed.");
+
+                                            if("Account is not fully set up".equals(errorDescription)){
+                                                return Mono.error(new UserActionRequiredException(
+                                                        errorDescription + ". Please check your email or contact support."
+                                                ));
+                                            }
+
+                                            return Mono.error(new AuthenticationFailedException(errorDescription));
+
+                                        } catch (JsonProcessingException e) {
+                                            log.error("Could not parse Keycloak error response as JSON: {}", body, e);
+                                            return Mono.error(new AuthenticationFailedException(
+                                                    "Authentication failed."
+                                            ));
+                                        }
                                     });
                         })
                 .bodyToMono(JwtResponse.class);
@@ -116,5 +145,33 @@ public class AuthServiceImpl implements AuthService {
                                     });
                         })
                 .bodyToMono(JwtResponse.class);
+    }
+
+    @Override
+    public Mono<Void> logout(String refreshToken) {
+        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+
+        formData.add("client_id", clientId);
+        formData.add("client_secret", clientSecret);
+        formData.add("refresh_token", refreshToken);
+
+        // Build a new WebClient to target the absolute logout URI
+        return WebClient.builder().build().post()
+                .uri(logoutUri)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .onStatus(
+                        HttpStatusCode::isError,
+                        response -> {
+                            return response.bodyToMono(String.class)
+                                    .doOnNext(body -> log.warn("Keycloak Logout Failed ({}): {}", response.statusCode(), body))
+                                    .flatMap(body -> {
+                                        // Log failure but complete successfully
+                                        return Mono.empty();
+                                    });
+                        })
+                .bodyToMono(Void.class)
+                .doOnError(e -> log.error("Unexpected error during Keycloak logout: {}", e.getMessage()));
     }
 }

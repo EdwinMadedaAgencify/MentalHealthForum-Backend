@@ -22,6 +22,9 @@ public enum ErrorCode {
     // Authentication Failure (401)
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Authentication failed. Invalid or missing credentials."),
 
+    // --- Action Required Error ---
+    USER_ACTION_REQUIRED(HttpStatus.UNAUTHORIZED, "User authentication succeeded but requires further action."),
+
     // Authorization Failure (403)
     FORBIDDEN(HttpStatus.FORBIDDEN, "Access denied. You do not have sufficient permissions for this resource."),
 
