@@ -234,6 +234,10 @@ public class GlobalExceptionHandler {
             errorCode = ErrorCode.METHOD_NOT_ALLOWED;
             message = String.format("Method not allowed on resource '%s'", path);
         }
+        else if(status == HttpStatus.BAD_REQUEST){
+            errorCode = ErrorCode.VALIDATION_FAILED;
+            message = ex.getReason() != null? ex.getReason(): ErrorCode.VALIDATION_FAILED.getDescription();
+        }
         else {
             // Catch other ResponseStatusExceptions (e.g., 400 Bad Request if thrown explicitly)
             errorCode = ErrorCode.INTERNAL_SERVER_ERROR;

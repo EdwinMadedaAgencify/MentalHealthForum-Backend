@@ -3,7 +3,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
-import jakarta.servlet.http.HttpServletRequest; // Import the MVC-native request
 import jakarta.validation.Valid;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.http.ResponseEntity;

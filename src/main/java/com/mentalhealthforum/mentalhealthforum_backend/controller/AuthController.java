@@ -3,6 +3,7 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.JwtResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.RefreshRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import jakarta.validation.Valid;
 import org.keycloak.representations.RefreshToken;
@@ -53,8 +54,12 @@ public class AuthController {
      * The client must send the refresh token in the body for revocation.
      */
     @PostMapping("/logout")
-    public Mono<ResponseEntity<String>> logoutUser(@RequestBody RefreshRequest refreshRequest){
+    public Mono<ResponseEntity<StandardSuccessResponse<Void>>> logoutUser(@RequestBody RefreshRequest refreshRequest){
         return authService.logout(refreshRequest.refreshToken())
-                .then(Mono.just(new ResponseEntity<>("Logged out successfully. Token revocation attempted.", HttpStatus.OK)));
+                .then(Mono.just(ResponseEntity.ok(
+                                new StandardSuccessResponse<>(
+                                        "Logout successful."
+                                )
+                )));
     }
 }

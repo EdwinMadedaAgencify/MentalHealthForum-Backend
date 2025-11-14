@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.JwtResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.AuthenticationFailedException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserActionRequiredException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
@@ -94,7 +96,7 @@ public class AuthServiceImpl implements AuthService {
 
                                             if("Account is not fully set up".equals(errorDescription)){
                                                 return Mono.error(new UserActionRequiredException(
-                                                        errorDescription + ". Please check your email or contact support."
+                                                        errorDescription + ". Please check your inbox."
                                                 ));
                                             }
 
@@ -167,8 +169,11 @@ public class AuthServiceImpl implements AuthService {
                             return response.bodyToMono(String.class)
                                     .doOnNext(body -> log.warn("Keycloak Logout Failed ({}): {}", response.statusCode(), body))
                                     .flatMap(body -> {
-                                        // Log failure but complete successfully
-                                        return Mono.empty();
+                                        return Mono.error(new ApiException(
+                                                "Logout failed. Please try again.",
+                                                ErrorCode.AUTHENTICATION_SERVICE_ERROR,
+                                                null
+                                        ));
                                     });
                         })
                 .bodyToMono(Void.class)
