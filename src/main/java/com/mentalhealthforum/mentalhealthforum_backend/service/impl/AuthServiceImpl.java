@@ -3,7 +3,10 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.JwtResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.AuthenticationFailedException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -11,7 +14,6 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 /**
@@ -20,6 +22,8 @@ import reactor.core.publisher.Mono;
  */
 @Service
 public class AuthServiceImpl implements AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
 
     private final WebClient webClient;
     private final String clientId;
@@ -32,9 +36,8 @@ public class AuthServiceImpl implements AuthService {
         String authServerUrl = properties.getAuthServerUrl();
         String realm = properties.getRealm();
 
-        // FINAL CORRECTION: Using the exact properties provided by the user
-        this.clientId = properties.getResource(); // Now maps to 'keycloak.resource'
-        this.clientSecret = properties.getCredentials().getSecret(); // Now maps to 'keycloak.credentials.secret'
+        this.clientId = properties.getResource();
+        this.clientSecret = properties.getCredentials().getSecret();
 
         String tokenUri = String.format("%s/realms/%s/protocol/openid-connect/token", authServerUrl, realm);
 
@@ -65,17 +68,14 @@ public class AuthServiceImpl implements AuthService {
                 .body(BodyInserters.fromFormData(formData))
                 .retrieve()
                 .onStatus(
+                        // Intercept only 4xx errors (Invalid Credentials, etc.)
                         HttpStatusCode::is4xxClientError,
                         response -> {
                             return response.bodyToMono(String.class)
+                                    .doOnNext(body ->  log.error("Keycloak Login Error Response (4xx): {}", body))
                                     .flatMap(body -> {
-                                        System.err.println("Keycloak Error Response: " + body);
-                                        return Mono.error(new WebClientResponseException(
-                                                response.statusCode().value(),
-                                                "Keycloak Authentication Failed",
-                                                response.headers().asHttpHeaders(),
-                                                body.getBytes(),
-                                                null
+                                        return Mono.error(new AuthenticationFailedException(
+                                                "Authentication failed: Invalid username or password."
                                         ));
                                     });
                         })
@@ -104,17 +104,14 @@ public class AuthServiceImpl implements AuthService {
                 .body(BodyInserters.fromFormData(formData))
                 .retrieve()
                 .onStatus(
+                        // Intercept only 4xx errors (Invalid Token)
                         HttpStatusCode::is4xxClientError,
                         response ->  {
                             return response.bodyToMono(String.class)
+                                    .doOnNext(body -> log.error("Keycloak Refresh Failed (4xx) : {}", body))
                                     .flatMap(body -> {
-                                        System.err.println("Keycloak Refresh Failed: " + body);
-                                        return Mono.error(new WebClientResponseException(
-                                                response.statusCode().value(),
-                                                "Token Refresh Failed",
-                                                response.headers().asHttpHeaders(),
-                                                body.getBytes(),
-                                                null
+                                        return Mono.error(new AuthenticationFailedException(
+                                                "Token refresh failed. The refresh token is invalid or expired."
                                         ));
                                     });
                         })

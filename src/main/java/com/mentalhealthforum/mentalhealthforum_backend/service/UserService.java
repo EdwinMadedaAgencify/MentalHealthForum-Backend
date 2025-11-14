@@ -1,26 +1,65 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.RegisterUserRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.ResetPasswordRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.UpdateUserProfileRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import org.keycloak.representations.idm.UserRepresentation;
+import reactor.core.publisher.Mono;
 
-
+/**
+ * Service contract for managing users, including interaction with Keycloak (for identity)
+ * and the local database (for user profile data).
+ * All methods now return Mono for non-blocking execution.
+ */
 public interface UserService {
-    String registerUser(RegisterUserRequest registerUserRequest) throws UserExistsException, InvalidPasswordException;
 
-    UserRepresentation updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest) throws UserExistsException, UserDoesNotExistException;
+    /**
+     * Registers a new user.
+     * Errors (UserExistsException, InvalidPasswordException, PasswordMismatchException)
+     * are signaled via Mono.error().
+     * @param registerUserRequest The registration details.
+     * @return Mono of the created user's ID.
+     */
+    Mono<String> registerUser(RegisterUserRequest registerUserRequest);
 
-    void resetPassword(String userId, ResetPasswordRequest resetPasswordRequest) throws PasswordMismatchException, InvalidPasswordException, UserDoesNotExistException;
+    /**
+     * Retrieves a user's details by their ID.
+     * Error (UserDoesNotExistException) is signaled via Mono.error().
+     * @param userId The ID of the user (Keycloak ID or internal ID, depending on implementation).
+     * @return Mono of the UserRepresentation.
+     */
+    Mono<UserRepresentation> getUser(String userId);
 
-    void deleteUser(String userId) throws UserDoesNotExistException;
+    /**
+     * Retrieves a paginated list of all users.
+     * @param page The page number.
+     * @param size The size of the page.
+     * @return Mono of PaginatedResponse containing UserRepresentations.
+     */
+    Mono<PaginatedResponse<UserRepresentation>> getAllUsers(int page, int size);
 
-    UserRepresentation getUser(String userId) throws UserDoesNotExistException;
+    /**
+     * Updates an existing user's profile.
+     * Errors (UserExistsException, UserDoesNotExistException) are signaled via Mono.error().
+     * @param userId The ID of the user to update.
+     * @param updateUserProfileRequest The update details.
+     * @return Mono of the updated UserRepresentation.
+     */
+    Mono<UserRepresentation> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest);
 
-    PaginatedResponse<UserRepresentation> getAllUsers(int page, int size);
+    /**
+     * Resets a user's password.
+     * Errors (PasswordMismatchException, InvalidPasswordException, UserDoesNotExistException)
+     * are signaled via Mono.error().
+     * @param userId The ID of the user.
+     * @param resetPasswordRequest The password reset details.
+     * @return Mono<Void> signaling completion.
+     */
+    Mono<Void> resetPassword(String userId, ResetPasswordRequest resetPasswordRequest);
+
+    /**
+     * Deletes a user.
+     * Error (UserDoesNotExistException) is signaled via Mono.error().
+     * @param userId The ID of the user to delete.
+     * @return Mono<Void> signaling completion.
+     */
+    Mono<Void> deleteUser(String userId);
 }

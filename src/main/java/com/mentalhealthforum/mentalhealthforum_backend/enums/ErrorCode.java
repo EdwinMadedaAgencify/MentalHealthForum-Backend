@@ -9,6 +9,7 @@ public enum ErrorCode {
     // --- General Validation/API Errors ---
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "One or more input fields failed validation."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested resource was not found."),
+    UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "The requested media type is not supported for this endpoint."),
 
     // --- Authentication/User Management Errors ---
     USER_ALREADY_EXISTS(HttpStatus.CONFLICT, "An account already exists with this username or email."),

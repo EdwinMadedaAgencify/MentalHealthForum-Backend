@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -106,6 +107,24 @@ public class GlobalExceptionHandler {
                 null
         );
         return ResponseEntity.status(ErrorCode.VALIDATION_FAILED.getHttpStatus()).body(response);
+    }
+    /**
+     * 4a. Handles HttpMediaTypeNotSupportedException (NEW: Unsupported Content-Type, returns 415)
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<StandardErrorResponse> handleHttpMediaTypeNotSupportedException(
+            HttpMediaTypeNotSupportedException ex,
+            WebRequest request){
+        String path = getPath(request);
+        logger.warn("Media Type Not Supported Exception occurred at path '{}': {}", path, ex.getMessage());
+
+        StandardErrorResponse response = new StandardErrorResponse(
+                ErrorCode.UNSUPPORTED_MEDIA_TYPE.getDescription(),
+                ErrorCode.UNSUPPORTED_MEDIA_TYPE,
+                path,
+                List.of(new ErrorDetail("ContentType", ex.getMessage()))
+        );
+        return ResponseEntity.status(ErrorCode.UNSUPPORTED_MEDIA_TYPE.getHttpStatus()).body(response);
     }
     /**
      * 4. Handles JSON/Request Body Readability Issues

@@ -1,19 +1,15 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
+import jakarta.servlet.http.HttpServletRequest; // Import the MVC-native request
 import jakarta.validation.Valid;
 import org.keycloak.representations.idm.UserRepresentation;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.web.util.UriComponentsBuilder; // Use standard UriComponentsBuilder
+import reactor.core.publisher.Mono;
 
 import java.net.URI;
 
@@ -30,122 +26,124 @@ public class UserController {
     }
 
     // -------------------------------------------------------------------------
-    // MANUAL AUTHENTICATION AND TOKEN LIFECYCLE
+    // MANUAL AUTHENTICATION AND TOKEN LIFECYCLE (Already Reactive)
     // -------------------------------------------------------------------------
 
     /**
      * Handles manual user login (ROPC Grant). Returns Access and Refresh Tokens.
-     * Uses Mono.block() for compatibility with Spring MVC and Springdoc.
+     * The service returns Mono<JwtResponse>, which is mapped to a 200 OK Response.
      */
     @PostMapping("/login")
-    public ResponseEntity<JwtResponse> login(@Valid @RequestBody LoginRequest loginRequest){
-        try{
-            // Block until the non-blocking service call completes
-            JwtResponse jwtResponse = authService.authenticate(loginRequest).block();
-            return ResponseEntity.ok(jwtResponse);
-        } catch (WebClientResponseException e){
-            // Catches authentication failures from Keycloak
-            System.err.println("Keycloak authentication failed: " + e.getResponseBodyAsString());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        } catch (Exception e) {
-            System.err.println("An unexpected error occurred during login: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+    public Mono<ResponseEntity<JwtResponse>> login(@Valid @RequestBody LoginRequest loginRequest) {
+        return authService.authenticate(loginRequest)
+                .map(ResponseEntity::ok);
     }
 
     /**
      * Exchanges an expired refresh token for a new access and refresh token pair.
-     * Uses Mono.block() for compatibility with Spring MVC and Springdoc.
+     * The service returns Mono<JwtResponse>, which is mapped to a 200 OK Response.
      */
     @PostMapping("/refresh")
-    public ResponseEntity<JwtResponse> refresh(@Valid @RequestBody RefreshRequest refreshRequest){
-        try{
-            // Block until the non-blocking service call completes
-            JwtResponse jwtResponse = authService.refreshTokens(refreshRequest.refreshToken()).block();
-            return ResponseEntity.ok(jwtResponse);
-        } catch (WebClientResponseException e){
-            // Catches token refresh failures (e.g., expired refresh token)
-            System.err.println("Keycloak token refresh failed: " + e.getResponseBodyAsString());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        } catch (Exception e){
-            // Handles other unexpected blocking exceptions
-            System.err.println("An unexpected error occured during refresh: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+    public Mono<ResponseEntity<JwtResponse>> refresh(@Valid @RequestBody RefreshRequest refreshRequest) {
+        return authService.refreshTokens(refreshRequest.refreshToken())
+                .map(ResponseEntity::ok);
     }
 
     // -------------------------------------------------------------------------
-    // USER MANAGEMENT (Existing Endpoints)
+    // USER MANAGEMENT (Refactored to Reactive)
     // -------------------------------------------------------------------------
+
+
     @PostMapping("/register")
-    public ResponseEntity<StandardSuccessResponse<String>> registerUser(
-            @Valid @RequestBody RegisterUserRequest registerUserRequest) throws UserExistsException, InvalidPasswordException, PasswordMismatchException {
+    public Mono<ResponseEntity<StandardSuccessResponse<String>>> registerUser(
+            @Valid @RequestBody RegisterUserRequest registerUserRequest,
+            // Inject the MVC-native request object
+            HttpServletRequest request) {
 
-        String userId = userService.registerUser(registerUserRequest);
-
-        String message = "User registered successfully. Activation required.";
-        StandardSuccessResponse<String> response = new StandardSuccessResponse<>(message, userId);
-
-        URI location = ServletUriComponentsBuilder
-                .fromCurrentRequestUri()
-                .path("/{id}")
-                .buildAndExpand(userId)
+        // 1. Capture the base URI components immediately (outside the reactive chain)
+        // This relies on the current thread having access to the HttpServletRequest data.
+        final URI currentUri = UriComponentsBuilder
+                .fromUriString(request.getRequestURL()
+                .toString())
+                .build()
                 .toUri();
 
-        return ResponseEntity.created(location).body(response);
+        // userService.registerUser returns Mono<String> (the userId)
+        return userService.registerUser(registerUserRequest)
+                .map(userId -> {
+                    // Map the userId into a 201 Created Response
+                    String message = "User registered successfully. Activation required.";
+                    StandardSuccessResponse<String> response = new StandardSuccessResponse<>(message, userId);
+
+                    // FIX: Use UriComponentsBuilder with the request's URI (reactive safe)
+                    URI location = UriComponentsBuilder.fromUri(currentUri)
+                            .path("/{id}") // Appends "/{id}"
+                            .buildAndExpand(userId) // Inserts the newly generated userId
+                            .toUri(); // Finalizes the URI object
+
+                    return ResponseEntity.created(location).body(response);
+                });
     }
 
     @GetMapping("/{userId}")
-    public ResponseEntity<StandardSuccessResponse<UserRepresentation>> getUser(@PathVariable String userId) throws UserDoesNotExistException{
-        UserRepresentation user = userService.getUser(userId);
-        String message = "User details retrieved successfully";
+    public Mono<ResponseEntity<StandardSuccessResponse<UserRepresentation>>> getUser(@PathVariable String userId) {
 
-        StandardSuccessResponse<UserRepresentation> response = new StandardSuccessResponse<>(message, user);
-        return ResponseEntity.ok(response);
+        // userService.getUser returns Mono<UserRepresentation>
+        return userService.getUser(userId)
+                .map(user -> {
+                    String message = "User details retrieved successfully";
+                    StandardSuccessResponse<UserRepresentation> response = new StandardSuccessResponse<>(message, user);
+                    return ResponseEntity.ok(response);
+                });
     }
 
     @GetMapping
-    public ResponseEntity<StandardSuccessResponse<PaginatedResponse<UserRepresentation>>> getAllUsers(
+    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<UserRepresentation>>>> getAllUsers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size){
 
-        PaginatedResponse<UserRepresentation> paginatedUsers = userService.getAllUsers(page, size);
-
-        String message = "Paginated user records retrieved successfully.";
-
-        StandardSuccessResponse<PaginatedResponse<UserRepresentation>> response = new StandardSuccessResponse<>(message, paginatedUsers);
-        return ResponseEntity.ok(response);
+        // userService.getAllUsers returns Mono<PaginatedResponse<UserRepresentation>>
+        return userService.getAllUsers(page, size)
+                .map(paginatedUsers -> {
+                    String message = "Paginated user records retrieved successfully.";
+                    StandardSuccessResponse<PaginatedResponse<UserRepresentation>> response = new StandardSuccessResponse<>(message, paginatedUsers);
+                    return ResponseEntity.ok(response);
+                });
     }
 
     @PatchMapping("/{userId}")
-    public ResponseEntity<StandardSuccessResponse<UserRepresentation>> updateUserProfile(
+    public Mono<ResponseEntity<StandardSuccessResponse<UserRepresentation>>> updateUserProfile(
             @PathVariable String userId,
-            @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) throws UserExistsException, UserDoesNotExistException {
+            @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) {
 
-        UserRepresentation updatedUser = userService.updateUserProfile(userId, updateUserProfileRequest);
-
-        String message = "User updated successfully.";
-
-        StandardSuccessResponse<UserRepresentation> response = new StandardSuccessResponse<>(message, updatedUser);
-        return ResponseEntity.ok(response);
+        // userService.updateUserProfile returns Mono<UserRepresentation> (the updated user)
+        return userService.updateUserProfile(userId, updateUserProfileRequest)
+                .map(updatedUser -> {
+                    String message = "User updated successfully.";
+                    StandardSuccessResponse<UserRepresentation> response = new StandardSuccessResponse<>(message, updatedUser);
+                    return ResponseEntity.ok(response);
+                });
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<StandardSuccessResponse<Void>> resetPassword(
+    public Mono<ResponseEntity<StandardSuccessResponse<Void>>> resetPassword(
             @RequestParam String userId,
-            @Valid @RequestBody ResetPasswordRequest resetPasswordRequest) throws PasswordMismatchException,  InvalidPasswordException, UserDoesNotExistException {
+            @Valid @RequestBody ResetPasswordRequest resetPasswordRequest) {
 
-        userService.resetPassword(userId, resetPasswordRequest);
-
-        String message = "User reset password successfully.";
-
-        StandardSuccessResponse<Void> response = new StandardSuccessResponse<>(message);
-        return ResponseEntity.ok(response);
+        // userService.resetPassword returns Mono<Void>. We use then() to wait for completion.
+        return userService.resetPassword(userId, resetPasswordRequest)
+                .then(Mono.fromCallable(() -> {
+                    String message = "User reset password successfully.";
+                    StandardSuccessResponse<Void> response = new StandardSuccessResponse<>(message);
+                    return ResponseEntity.ok(response);
+                }));
     }
 
     @DeleteMapping("/{userId}")
-    public ResponseEntity<Void> deleteUser(@PathVariable String userId) throws UserDoesNotExistException {
-        userService.deleteUser(userId);
-        return ResponseEntity.noContent().build();
+    public Mono<ResponseEntity<Void>> deleteUser(@PathVariable String userId) {
+        // userService.deleteUser returns Mono<Void>. We use thenReturn() to wait for completion
+        // and then emit the 204 No Content response.
+        return userService.deleteUser(userId)
+                .thenReturn(ResponseEntity.noContent().build());
     }
 }
