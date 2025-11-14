@@ -35,8 +35,9 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/actuator/**",
             "/error/**",
+            "/api/users/register/**",
             // Consolidated authentication paths for login, refresh, and logout
-            "/api/v1/auth/**"
+            "/api/auth/**"
     };
 
     /**

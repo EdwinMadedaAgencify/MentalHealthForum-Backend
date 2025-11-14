@@ -9,6 +9,7 @@ public enum ErrorCode {
     // --- General Validation/API Errors ---
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "One or more input fields failed validation."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested resource was not found."),
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "The request method is not supported for this endpoint."),
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "The requested media type is not supported for this endpoint."),
 
     // --- Authentication/User Management Errors ---

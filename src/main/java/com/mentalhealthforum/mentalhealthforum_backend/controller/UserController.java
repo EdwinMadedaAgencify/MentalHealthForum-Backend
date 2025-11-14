@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.util.UriComponentsBuilder; // Use standard UriComponentsBuilder
 import reactor.core.publisher.Mono;
 
@@ -30,16 +31,9 @@ public class UserController {
     @PostMapping("/register")
     public Mono<ResponseEntity<StandardSuccessResponse<String>>> registerUser(
             @Valid @RequestBody RegisterUserRequest registerUserRequest,
-            // Inject the MVC-native request object
-            HttpServletRequest request) {
+            ServerWebExchange exchange) {
 
-        // 1. Capture the base URI components immediately (outside the reactive chain)
-        // This relies on the current thread having access to the HttpServletRequest data.
-        final URI currentUri = UriComponentsBuilder
-                .fromUriString(request.getRequestURL()
-                .toString())
-                .build()
-                .toUri();
+        final URI currentUri = exchange.getRequest().getURI();
 
         // userService.registerUser returns Mono<String> (the userId)
         return userService.registerUser(registerUserRequest)
@@ -48,7 +42,7 @@ public class UserController {
                     String message = "User registered successfully. Activation required.";
                     StandardSuccessResponse<String> response = new StandardSuccessResponse<>(message, userId);
 
-                    // FIX: Use UriComponentsBuilder with the request's URI (reactive safe)
+                    // Use UriComponentsBuilder with the reactive request's URI
                     URI location = UriComponentsBuilder.fromUri(currentUri)
                             .path("/{id}") // Appends "/{id}"
                             .buildAndExpand(userId) // Inserts the newly generated userId
