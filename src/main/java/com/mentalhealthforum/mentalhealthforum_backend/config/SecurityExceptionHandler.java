@@ -3,26 +3,30 @@ package com.mentalhealthforum.mentalhealthforum_backend.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardErrorResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.http.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
+import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
 
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
+/**
+ * Reactive exception handler for 401 (Authentication) and 403 (Authorization) errors.
+ * Implements reactive interfaces ServerAuthenticationEntryPoint and ServerAccessDeniedHandler.
+ */
 @Component
-public class SecurityExceptionHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
+public class SecurityExceptionHandler implements ServerAuthenticationEntryPoint, ServerAccessDeniedHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityExceptionHandler.class);
 
-    // ObjectMapper is injected by Spring Boot for reliable JSON serialization
     private final ObjectMapper objectMapper;
 
     public SecurityExceptionHandler(ObjectMapper objectMapper) {
@@ -31,75 +35,58 @@ public class SecurityExceptionHandler implements AuthenticationEntryPoint, Acces
 
     // --- Handles 401 Unauthorized (Authentication Failure) ---
     @Override
-    public void commence(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            AuthenticationException authException) throws IOException, ServletException {
-
-        logger.warn("401 Unauthorized Access Attempt: {}", authException.getMessage());
-
-        writeErrorResponse(
-                response,
-                HttpServletResponse.SC_UNAUTHORIZED,
+    public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException ex) {
+        logger.warn("401 Unauthorized Access Attempt: {}", ex.getMessage());
+        return writeErrorResponse(
+                exchange,
+                HttpStatus.UNAUTHORIZED,
                 ErrorCode.UNAUTHORIZED,
-                "Authentication failed. Invalid or missing credentials.",
-                request.getRequestURI()
+                "Authentication failed. Invalid or missing credentials."
         );
     }
 
     // --- Handles 403 Forbidden (Authorization Failure) ---
     @Override
-    public void handle(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            AccessDeniedException accessDeniedException) throws IOException, ServletException {
-
-        logger.warn("403 Forbidden Access Attempt: {}", accessDeniedException.getMessage());
-
-        writeErrorResponse(
-                response,
-                HttpServletResponse.SC_FORBIDDEN,
+    public Mono<Void> handle(ServerWebExchange exchange, AccessDeniedException ex) {
+        logger.warn("403 Forbidden Access Attempt: {}", ex.getMessage());
+        return writeErrorResponse(
+                exchange,
+                HttpStatus.FORBIDDEN,
                 ErrorCode.FORBIDDEN,
-                "Forbidden: Insufficient permissions for this resource.",
-                request.getRequestURI()
+                "Forbidden: Insufficient permissions for this resource."
         );
     }
 
     /**
-     * Sets headers, creates the custom DTO, writes JSON, and flushes the stream.
+     * Sets headers, creates the custom DTO, writes JSON to the response body, and completes the Mono.
      */
-    private void writeErrorResponse(
-            HttpServletResponse response,
-            int httpStatus,
+    private Mono<Void> writeErrorResponse(
+            ServerWebExchange exchange,
+            HttpStatus httpStatus,
             ErrorCode errorCode,
-            String message,
-            String path
-    ) throws IOException {
-
+            String message
+    ) {
         // 1. Set Status and Headers
-        response.setStatus(httpStatus);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
+        exchange.getResponse().setStatusCode(httpStatus);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        exchange.getResponse().getHeaders().setAccessControlAllowOrigin("*"); // Important for CORS errors
 
-        // 2. Create the DTO (Java Record, using the compact constructor)
+        // 2. Create the DTO
         StandardErrorResponse errorResponse = new StandardErrorResponse(
                 message,
                 errorCode,
-                path,
-                null // Passing null for the details list
+                exchange.getRequest().getPath().toString(),
+                null
         );
 
-        // 3. WRITE THE JSON AND FLUSH IMMEDIATELY
+        // 3. Serialize DTO to JSON and write to response body
         try {
-            // Write the JSON using the injected ObjectMapper
-            objectMapper.writeValue(response.getWriter(), errorResponse);
-
-            // CRITICAL: Force the output buffer to be written immediately to the client.
-            response.getWriter().flush();
-            response.flushBuffer();
-        } catch (IOException e) {
+            byte[] bytes = objectMapper.writeValueAsBytes(errorResponse);
+            DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
+            return exchange.getResponse().writeWith(Mono.just(buffer));
+        } catch (Exception e) {
             logger.error("Failed to write custom error response for status {}: {}", httpStatus, e.getMessage());
-            throw e;
+            return Mono.error(e);
         }
     }
 }

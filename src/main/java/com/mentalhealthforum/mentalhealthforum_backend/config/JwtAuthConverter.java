@@ -1,6 +1,5 @@
 package com.mentalhealthforum.mentalhealthforum_backend.config;
 
-
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -8,15 +7,17 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Custom converter to map Keycloak realm roles to Spring authorities.
+ * Custom REACTIVE converter to map Keycloak realm roles to Spring authorities.
+ * It must return a Mono<AbstractAuthenticationToken> for WebFlux compatibility.
  */
 @Component
-public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationToken> {
+public class JwtAuthConverter implements Converter<Jwt, Mono<AbstractAuthenticationToken>> {
 
     private static final String REALM_ACCESS = "realm_access";
     private static final String ROLES = "roles";
@@ -28,8 +29,16 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
         this.principalClaimName = principalClaimName;
     }
 
+    /**
+     * Converts a blocking Jwt object into a reactive Mono containing the authentication token.
+     * The roles extraction is a synchronous operation, so it's wrapped in a Mono.
+     */
     @Override
-    public AbstractAuthenticationToken convert(Jwt jwt) {
+    public Mono<AbstractAuthenticationToken> convert(Jwt jwt) {
+        return Mono.just(extractAuthenticationToken(jwt));
+    }
+
+    private AbstractAuthenticationToken extractAuthenticationToken(Jwt jwt) {
         Collection<? extends GrantedAuthority> authorities = extractRealmRoles(jwt);
         String principal = jwt.getClaimAsString(principalClaimName);
         return new JwtAuthenticationToken(jwt, authorities, principal);

@@ -3,27 +3,24 @@ package com.mentalhealthforum.mentalhealthforum_backend.config;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.annotation.method.configuration.EnableReactiveMethodSecurity;
+import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
 @Configuration
-@EnableWebSecurity
-@EnableMethodSecurity // Enable support for @PreAuthorize and other method-level security annotations for @PreAuthorize on controller methods
+// Change to the reactive security annotation
+@EnableReactiveMethodSecurity
 public class SecurityConfig {
 
     private final String principalClaimName;
 
-    // Inject the combined handler
+    // Assuming SecurityExceptionHandler implements ServerAuthenticationEntryPoint/ServerAccessDeniedHandler
     @Autowired
     private SecurityExceptionHandler securityExceptionHandler;
 
@@ -38,32 +35,37 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/actuator/**",
             "/error/**",
-            "/api/users/register**",
-            "/api/users/login**",
-            "/api/users/refresh**"
+            // Consolidated authentication paths for login, refresh, and logout
+            "/api/v1/auth/**"
     };
 
+    /**
+     * Defines the reactive security filter chain.
+     * @param http The reactive HTTP security configuration object.
+     * @return The configured SecurityWebFilterChain.
+     */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(Customizer.withDefaults())
-                .csrf(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(AUTH_WHITELIST).permitAll()
-                        .anyRequest()
-                        .authenticated())
-                // Use the combined handler for both 401 and 403
+                .authorizeExchange(auth -> auth
+                        .pathMatchers(AUTH_WHITELIST).permitAll() // Allow unauthenticated access to whitelist
+                        .anyExchange().authenticated() // Require authentication for all other requests
+                )
+                // Use the combined handler for both 401 and 403 (Assuming SecurityExceptionHandler is reactive)
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(securityExceptionHandler)
                         .accessDeniedHandler(securityExceptionHandler)
                 )
+                // Configure OAuth2 Resource Server to handle JWT validation
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter()))
+                        // Apply exception handlers specifically for Resource Server authentication issues
                         .authenticationEntryPoint(securityExceptionHandler)
                         .accessDeniedHandler(securityExceptionHandler)
                 )
                 .build();
-
     }
 
     @Bean
@@ -83,5 +85,4 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
 }
