@@ -1,17 +1,22 @@
 package com.mentalhealthforum.mentalhealthforum_backend.config;
 
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableReactiveMethodSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.oauth2.server.resource.web.server.authentication.ServerBearerTokenAuthenticationConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
+
 
 @Configuration
 // Change to the reactive security annotation
@@ -19,15 +24,17 @@ import java.util.List;
 public class SecurityConfig {
 
     private final String principalClaimName;
-
-    // Assuming SecurityExceptionHandler implements ServerAuthenticationEntryPoint/ServerAccessDeniedHandler
-    @Autowired
-    private SecurityExceptionHandler securityExceptionHandler;
+    private final SecurityExceptionHandler securityExceptionHandler;  // SecurityExceptionHandler implements ServerAuthenticationEntryPoint/ServerAccessDeniedHandler
+    private final CookieToJwtConverter cookieToJwtConverter;
 
     public SecurityConfig(
-            JwtProperties jwtProperties
+            JwtProperties jwtProperties,
+            SecurityExceptionHandler securityExceptionHandler,
+            CookieToJwtConverter cookieToJwtConverter
     ){
         this.principalClaimName = jwtProperties.getPrincipalClaimName();
+        this.securityExceptionHandler = securityExceptionHandler;
+        this.cookieToJwtConverter = cookieToJwtConverter;
     }
 
     private static final String[] AUTH_WHITELIST = {
@@ -36,9 +43,24 @@ public class SecurityConfig {
             "/actuator/**",
             "/error/**",
             "/api/users/register/**",
-            // Consolidated authentication paths for login, refresh, and logout
-            "/api/auth/**"
+            "/api/auth/**" // Consolidated authentication paths for login, refresh, and logout
     };
+
+    /**
+     * Creates a composite converter that checks the cookie OR the Authorization header.
+     */
+    private ServerAuthenticationConverter compositeTokenConverter(){
+        // 1. Standard Converter: Checks for Authorization: Bearer <token> header
+        ServerAuthenticationConverter bearerConverter = new ServerBearerTokenAuthenticationConverter();
+
+        // 2. Custom Converter: Checks for ACCESS_TOKEN cookie
+        ServerAuthenticationConverter cookieConverter = new CookieToJwtConverter();
+
+        return (exchange -> Mono.just(exchange)
+                .flatMap(cookieConverter::convert)
+                .switchIfEmpty(Mono.defer(() -> bearerConverter.convert(exchange)))
+        );
+    }
 
     /**
      * Defines the reactive security filter chain.
@@ -48,19 +70,23 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
+                // CRITICAL FOR COOKIE AUTH: CSRF must be disabled as it's typically stateful
+                // and cookies are stateless here.
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(auth -> auth
                         .pathMatchers(AUTH_WHITELIST).permitAll() // Allow unauthenticated access to whitelist
                         .anyExchange().authenticated() // Require authentication for all other requests
                 )
-                // Use the combined handler for both 401 and 403 (Assuming SecurityExceptionHandler is reactive)
+                // Use the combined handler for both 401 and 403
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(securityExceptionHandler)
                         .accessDeniedHandler(securityExceptionHandler)
                 )
                 // Configure OAuth2 Resource Server to handle JWT validation
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        // **FIX:** We set the custom composite converter here
+                        .bearerTokenConverter(compositeTokenConverter())  // <-- Now checks cookie OR header
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter()))
                         // Apply exception handlers specifically for Resource Server authentication issues
                         .authenticationEntryPoint(securityExceptionHandler)
@@ -77,9 +103,11 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource(){
         CorsConfiguration configuration = new CorsConfiguration();
+        // Allow the frontend domain
         configuration.setAllowedOrigins(List.of("http://localhost:3000"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        // CRITICAL FOR COOKIE AUTH: Must allow credentials (cookies) to be sent cross-origin
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

@@ -33,6 +33,10 @@ import java.util.Map;
 public class AuthServiceImpl implements AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
+
+    // Constant for the specific Keycloak error that indicates required actions are pending.
+    private static final String KEYCLOAK_REQUIRED_ACTION_ERROR = "Account is not fully set up";
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final WebClient webClient;
@@ -94,9 +98,10 @@ public class AuthServiceImpl implements AuthService {
                                             Map<String, String> errorBody = objectMapper.readValue(body, new TypeReference<Map<String, String>>() {});
                                             String errorDescription = errorBody.getOrDefault("error_description", "Authentication failed.");
 
-                                            if("Account is not fully set up".equals(errorDescription)){
+                                            // Pass error description directly with minimal hints
+                                            if(KEYCLOAK_REQUIRED_ACTION_ERROR.equals(errorDescription)){
                                                 return Mono.error(new UserActionRequiredException(
-                                                        errorDescription + ". Please check your inbox."
+                                                        errorDescription + ". Please check your inbox for verification links or complete required profile updates."
                                                 ));
                                             }
 
