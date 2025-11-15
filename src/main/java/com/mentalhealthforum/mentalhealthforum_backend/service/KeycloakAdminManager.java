@@ -1,0 +1,45 @@
+package com.mentalhealthforum.mentalhealthforum_backend.service;
+
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Interface defining the contract for all blocking Keycloak Admin Client interactions.
+ * This contract enforces the abstraction layer, ensuring the reactive service layer
+ * deals with our internal DTOs (KeycloakUserDto) rather than raw Keycloak types.
+ */
+public interface KeycloakAdminManager {
+
+    // --- User Lookup Operations (Returning DTOs) ---
+
+    Optional<UserRepresentation> findUserByUserId(String userId);
+
+    Optional<UserRepresentation> findUserByUsername(String username);
+
+    Optional<UserRepresentation> findUserByEmail(String email);
+
+    long countUsers();
+
+    List<UserRepresentation> listUsers(int firstResult, int size);
+
+    // --- User Management Operations ---
+
+    String createUser(UserRepresentation user);
+
+    void updateUser(UserRepresentation userRep);
+
+    void deleteUser(String userId);
+
+    void resetPassword(String userId, String newPassword) throws InvalidPasswordException;
+
+    // --- Credential and Role Helpers ---
+
+    void assignUserRole(String userId, ForumRole role);
+
+    CredentialRepresentation createPasswordCredential(String password) throws InvalidPasswordException;
+}

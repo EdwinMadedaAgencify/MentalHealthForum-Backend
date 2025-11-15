@@ -3,6 +3,7 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
+import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
 import jakarta.annotation.PostConstruct;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.core.Response;
@@ -25,22 +26,24 @@ import java.util.Optional;
 
 /**
  * Dedicated service for encapsulating all blocking operations related to the
- * Keycloak Admin Client (keycloak-admin-client).
- *
+ * Keycloak Admin Client (keycloak-admin-client). This class implements the
+ * KeycloakAdminManager interface and handles the mapping from Keycloak's
+ * UserRepresentation to our internal KeycloakUserDto.
+
  * All methods in this class are blocking and must be called within
  * Mono.fromCallable().subscribeOn(Schedulers.boundedElastic())
  * from the reactive service layer.
  */
 @Service
-public class KeycloakAdminManager {
+public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
 
-    private static final Logger log = LoggerFactory.getLogger(KeycloakAdminManager.class);
+    private static final Logger log = LoggerFactory.getLogger(KeycloakAdminManagerImpl.class);
     private final KeycloakProperties keycloakProperties;
     private Keycloak keycloak;
 
     private static final String PASSWORD_POLICY_REGEX = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[^a-zA-Z0-9\\s]).{8,}$";
 
-    public KeycloakAdminManager(KeycloakProperties keycloakProperties) {
+    public KeycloakAdminManagerImpl(KeycloakProperties keycloakProperties) {
         this.keycloakProperties = keycloakProperties;
     }
 
@@ -56,7 +59,7 @@ public class KeycloakAdminManager {
         log.info("Keycloak Admin Client initialized successfully.");
     }
 
-    // --- User Lookup Operations ---
+    // --- User Lookup Operations (Now returning KeycloakUserDto) ---
 
     public Optional<UserRepresentation> findUserByUserId(String userId) {
         try {

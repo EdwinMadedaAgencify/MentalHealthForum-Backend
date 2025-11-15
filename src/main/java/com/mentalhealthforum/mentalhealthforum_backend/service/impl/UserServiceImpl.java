@@ -1,12 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
-import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.RegisterUserRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.ResetPasswordRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.UpdateUserProfileRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
@@ -18,7 +13,9 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -28,12 +25,12 @@ public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
-    private final KeycloakAdminManager adminManager;
+    private final KeycloakAdminManagerImpl adminManager;
 
     private static final ForumRole DEFAULT_FORUM_ROLE = ForumRole.FORUM_MEMBER;
 
-    // Inject the new KeycloakAdminManager
-    public UserServiceImpl(KeycloakAdminManager adminManager) {
+    // Inject the new KeycloakAdminManagerImpl
+    public UserServiceImpl(KeycloakAdminManagerImpl adminManager) {
         this.adminManager = adminManager;
     }
 
@@ -88,7 +85,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Mono<UserRepresentation> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest) {
+    public Mono<UserResponse> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest) {
         return Mono.fromCallable(() -> {
                     UserRepresentation userRep = adminManager.findUserByUserId(userId)
                             .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
@@ -114,7 +111,7 @@ public class UserServiceImpl implements UserService {
                         log.debug("No profile changes detected for user ID: {}", userId);
                     }
 
-                    return userRep;
+                    return mapToUserResponse(userRep);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -134,23 +131,34 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Mono<UserRepresentation> getUser(String userId) {
+    public Mono<UserResponse> getUser(String userId) {
         return Mono.fromCallable(() ->
-                        adminManager.findUserByUserId(userId) // Blocking lookup
+                        // Blocking lookup, then map to Response DTO
+                        adminManager.findUserByUserId(userId)
+                                .map(this::mapToUserResponse)
                                 .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId))
                 )
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
-    public Mono<PaginatedResponse<UserRepresentation>> getAllUsers(int page, int size) {
+    public Mono<PaginatedResponse<UserResponse>> getAllUsers(int page, int size) {
         return Mono.fromCallable(() -> {
                     if (page < 0 || size <= 0) {
                         throw new RuntimeException("Invalid pagination parameters: page >= 0 and size > 0 required.");
                     }
 
                     int firstResult = page * size;
-                    var content = adminManager.listUsers(firstResult, size); // Blocking list call
+
+                    // Blocking list call
+                    List<UserRepresentation> userReps = adminManager.listUsers(firstResult, size);
+
+                    // Map the content list to Response DTOs
+                    List<UserResponse> content = userReps.stream()
+                            .map(this::mapToUserResponse)
+                            .toList();
+
+
                     long totalElements = adminManager.countUsers(); // Blocking count call
                     int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / size);
                     boolean isLastPage = page >= totalPages - 1;
@@ -177,6 +185,34 @@ public class UserServiceImpl implements UserService {
     }
 
     // ------------------ Private Helper Methods (Simplified) ------------------
+
+    /**
+     * Maps a Keycloak UserRepresentation object to the clean, public-facing UserResponse dto.
+     * This function also performs the transformation to generate the fullName.
+     */
+    private UserResponse mapToUserResponse(UserRepresentation userRep){
+        // Calculate full name safely, handling nulls gracefully
+        String firstName = userRep.getFirstName() != null? userRep.getFirstName(): "";
+        String lastName = userRep.getLastName() != null? userRep.getLastName(): "";
+        String fullName = (firstName + " " + lastName).trim();
+
+        // Convert Keycloak's long timestamp (milliseconds) to Instant
+        // Keycloak uses milliseconds since epoch; use current time if timestamp is missing
+        Instant createdAt = userRep.getCreatedTimestamp() != null
+                ? Instant.ofEpochMilli(userRep.getCreatedTimestamp())
+                : Instant.now();
+
+        return new UserResponse(
+                userRep.getId(),
+                userRep.getUsername(),
+                userRep.getEmail(),
+                userRep.getFirstName(), // Passing raw first name
+                userRep.getLastName(),  // Passing raw last name
+                fullName,               // Passing calculated full name
+                userRep.isEmailVerified(),
+                createdAt
+        );
+    }
 
     private boolean setIfChanged(String newValue, String currentValue, Consumer<String> setter) {
         if (newValue != null && !newValue.isBlank() && !newValue.equals(currentValue)) {

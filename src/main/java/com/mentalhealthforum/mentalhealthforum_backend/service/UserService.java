@@ -1,7 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import org.keycloak.representations.idm.UserRepresentation;
 import reactor.core.publisher.Mono;
 
 /**
@@ -23,27 +22,29 @@ public interface UserService {
     /**
      * Retrieves a user's details by their ID.
      * Error (UserDoesNotExistException) is signaled via Mono.error().
+     *
      * @param userId The ID of the user (Keycloak ID or internal ID, depending on implementation).
-     * @return Mono of the UserRepresentation.
+     * @return Mono of the UserResponse.
      */
-    Mono<UserRepresentation> getUser(String userId);
+    Mono<UserResponse> getUser(String userId);
 
     /**
      * Retrieves a paginated list of all users.
      * @param page The page number.
      * @param size The size of the page.
-     * @return Mono of PaginatedResponse containing UserRepresentations.
+     * @return Mono of PaginatedResponse containing UserResponses.
      */
-    Mono<PaginatedResponse<UserRepresentation>> getAllUsers(int page, int size);
+    Mono<PaginatedResponse<UserResponse>> getAllUsers(int page, int size);
 
     /**
      * Updates an existing user's profile.
      * Errors (UserExistsException, UserDoesNotExistException) are signaled via Mono.error().
-     * @param userId The ID of the user to update.
+     *
+     * @param userId                   The ID of the user to update.
      * @param updateUserProfileRequest The update details.
-     * @return Mono of the updated UserRepresentation.
+     * @return Mono of the updated UserResponse.
      */
-    Mono<UserRepresentation> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest);
+    Mono<UserResponse> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest);
 
     /**
      * Resets a user's password.

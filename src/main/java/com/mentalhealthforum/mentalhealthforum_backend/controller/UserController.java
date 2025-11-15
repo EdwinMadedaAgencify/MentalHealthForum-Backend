@@ -4,7 +4,6 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
 import jakarta.validation.Valid;
-import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ServerWebExchange;
@@ -52,19 +51,19 @@ public class UserController {
     }
 
     @GetMapping("/{userId}")
-    public Mono<ResponseEntity<StandardSuccessResponse<UserRepresentation>>> getUser(@PathVariable String userId) {
+    public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> getUser(@PathVariable String userId) {
 
         // userService.getUser returns Mono<UserRepresentation>
         return userService.getUser(userId)
                 .map(user -> {
                     String message = "User details retrieved successfully";
-                    StandardSuccessResponse<UserRepresentation> response = new StandardSuccessResponse<>(message, user);
+                    StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, user);
                     return ResponseEntity.ok(response);
                 });
     }
 
     @GetMapping
-    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<UserRepresentation>>>> getAllUsers(
+    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<UserResponse>>>> getAllUsers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size){
 
@@ -72,13 +71,13 @@ public class UserController {
         return userService.getAllUsers(page, size)
                 .map(paginatedUsers -> {
                     String message = "Paginated user records retrieved successfully.";
-                    StandardSuccessResponse<PaginatedResponse<UserRepresentation>> response = new StandardSuccessResponse<>(message, paginatedUsers);
+                    StandardSuccessResponse<PaginatedResponse<UserResponse>> response = new StandardSuccessResponse<>(message, paginatedUsers);
                     return ResponseEntity.ok(response);
                 });
     }
 
     @PatchMapping("/{userId}")
-    public Mono<ResponseEntity<StandardSuccessResponse<UserRepresentation>>> updateUserProfile(
+    public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> updateUserProfile(
             @PathVariable String userId,
             @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) {
 
@@ -86,7 +85,7 @@ public class UserController {
         return userService.updateUserProfile(userId, updateUserProfileRequest)
                 .map(updatedUser -> {
                     String message = "User updated successfully.";
-                    StandardSuccessResponse<UserRepresentation> response = new StandardSuccessResponse<>(message, updatedUser);
+                    StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, updatedUser);
                     return ResponseEntity.ok(response);
                 });
     }
