@@ -25,11 +25,11 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Authentication failed. Invalid or missing credentials."),
     AUTHENTICATION_SERVICE_ERROR(HttpStatus.UNAUTHORIZED, "Communication with the Service failed during critical operation."),
 
-    // --- Action Required Error ---
-    USER_ACTION_REQUIRED(HttpStatus.UNAUTHORIZED, "User authentication succeeded but requires further action."),
-
     // Authorization Failure (403)
     FORBIDDEN(HttpStatus.FORBIDDEN, "Access denied. You do not have sufficient permissions for this resource."),
+
+    // --- Action Required Error ---
+    USER_ACTION_REQUIRED(HttpStatus.FORBIDDEN, "User authentication succeeded but requires further action."),
 
     // --- Generic Fallback ---
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal server error occurred.");
