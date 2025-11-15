@@ -2,12 +2,28 @@ spring:
   application:
     name: Mental Health Forum Backend
 
+  # ----------------------------------------------------------------------
+  # Keycloak OAuth2 Configuration (Existing)
+  # ----------------------------------------------------------------------
   security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: http://localhost:9080/realms/mentalhealthforum
           principal-claim-name: preferred_username
+
+  # ----------------------------------------------------------------------
+  # R2DBC Database Configuration (MOVED & FIXED INDENTATION)
+  # ----------------------------------------------------------------------
+  r2dbc:
+    url: r2dbc:postgresql://forum-db:5432/forum
+    username: forum_user
+    password: forum_password
+
+  sql:
+    # Disable schema initialization if you are using a migration tool (like Flyway)
+    init:
+      enabled: false
 
 keycloak:
   auth-server-url: http://localhost:9080
@@ -21,10 +37,12 @@ logging:
     org.springframework.security: INFO
     com.mentalhealthforum: DEBUG
 
-    # -----------------------------------------------------
-    # ADD THESE LINES TO LOG KEYCLOAK'S UNDERLYING HTTP TRAFFIC
-    # -----------------------------------------------------
-    org.jboss.resteasy: DEBUG # Logs Resteasy (JAX-RS) processing details
-    org.apache.http: DEBUG     # Logs Apache HTTP client details (connection/request)
-    org.apache.http.wire: DEBUG # Logs full HTTP Request/Response bodies (CRITICAL)
+    # R2DBC Logging
+    io.r2dbc: DEBUG
 
+    # -----------------------------------------------------
+    # LOG KEYCLOAK'S UNDERLYING HTTP TRAFFIC
+    # -----------------------------------------------------
+    org.jboss.resteasy: DEBUG
+    org.apache.http: DEBUG
+    org.apache.http.wire: DEBUG
