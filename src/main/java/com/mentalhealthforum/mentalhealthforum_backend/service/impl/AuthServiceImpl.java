@@ -22,7 +22,6 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -78,7 +77,7 @@ public class AuthServiceImpl implements AuthService {
         formData.add("client_id", clientId);
         formData.add("client_secret", clientSecret);
 
-        // 2. User Credentials
+        // 2. AppUser Credentials
         formData.add("username", request.username());
         formData.add("password", request.password());
 

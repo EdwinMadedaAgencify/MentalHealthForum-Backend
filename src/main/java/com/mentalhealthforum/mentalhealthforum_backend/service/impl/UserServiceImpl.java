@@ -24,14 +24,16 @@ import java.util.function.Consumer;
 public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
-
-    private final KeycloakAdminManagerImpl adminManager;
-
     private static final ForumRole DEFAULT_FORUM_ROLE = ForumRole.FORUM_MEMBER;
 
+    private final KeycloakAdminManagerImpl adminManager;
+    private final AppUserService appUserService;
+
+
     // Inject the new KeycloakAdminManagerImpl
-    public UserServiceImpl(KeycloakAdminManagerImpl adminManager) {
+    public UserServiceImpl(KeycloakAdminManagerImpl adminManager, AppUserService appUserService) {
         this.adminManager = adminManager;
+        this.appUserService = appUserService;
     }
 
     // ------------------ Public API Methods (Reactive Wrappers) ------------------
@@ -85,7 +87,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Mono<UserResponse> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest) {
+    public Mono<KeycloakUserDto> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest) {
         return Mono.fromCallable(() -> {
                     UserRepresentation userRep = adminManager.findUserByUserId(userId)
                             .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
@@ -111,7 +113,7 @@ public class UserServiceImpl implements UserService {
                         log.debug("No profile changes detected for user ID: {}", userId);
                     }
 
-                    return mapToUserResponse(userRep);
+                    return mapToKeycloakUserDto(userRep);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -123,7 +125,9 @@ public class UserServiceImpl implements UserService {
                     adminManager.findUserByUserId(userId)
                             .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
 
-                    adminManager.deleteUser(userId); // Blocking deletion
+                    // Block deletion in Keycloak
+                    adminManager.deleteUser(userId);
+
                     log.info("Successfully deleted user with ID: {}", userId);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -131,42 +135,31 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Mono<UserResponse> getUser(String userId) {
+    public Mono<KeycloakUserDto> getUser(String userId) {
         return Mono.fromCallable(() ->
                         // Blocking lookup, then map to Response DTO
                         adminManager.findUserByUserId(userId)
-                                .map(this::mapToUserResponse)
+                                .map(this::mapToKeycloakUserDto)
                                 .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId))
                 )
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
-    public Mono<PaginatedResponse<UserResponse>> getAllUsers(int page, int size) {
+    public Mono<List<KeycloakUserDto>> getAllUsers() {
         return Mono.fromCallable(() -> {
-                    if (page < 0 || size <= 0) {
-                        throw new RuntimeException("Invalid pagination parameters: page >= 0 and size > 0 required.");
-                    }
+                    // Blocking call to list all users (no pagination)
+                    List<UserRepresentation> userReps = adminManager.listAllUsers(); // Assuming there's a method to list all users
 
-                    int firstResult = page * size;
-
-                    // Blocking list call
-                    List<UserRepresentation> userReps = adminManager.listUsers(firstResult, size);
-
-                    // Map the content list to Response DTOs
-                    List<UserResponse> content = userReps.stream()
-                            .map(this::mapToUserResponse)
+                    // Map the list of UserRepresentation to KeycloakUserDto DTOs
+                    return userReps.stream()
+                            .map(this::mapToKeycloakUserDto)
                             .toList();
-
-
-                    long totalElements = adminManager.countUsers(); // Blocking count call
-                    int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / size);
-                    boolean isLastPage = page >= totalPages - 1;
-
-                    return new PaginatedResponse<>(content, page, size, totalElements, totalPages, isLastPage);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }
+
+
 
     @Override
     public Mono<Void> resetPassword(String userId, ResetPasswordRequest resetPasswordRequest) {
@@ -186,33 +179,19 @@ public class UserServiceImpl implements UserService {
 
     // ------------------ Private Helper Methods (Simplified) ------------------
 
-    /**
-     * Maps a Keycloak UserRepresentation object to the clean, public-facing UserResponse dto.
-     * This function also performs the transformation to generate the fullName.
-     */
-    private UserResponse mapToUserResponse(UserRepresentation userRep){
-        // Calculate full name safely, handling nulls gracefully
-        String firstName = userRep.getFirstName() != null? userRep.getFirstName(): "";
-        String lastName = userRep.getLastName() != null? userRep.getLastName(): "";
-        String fullName = (firstName + " " + lastName).trim();
-
-        // Convert Keycloak's long timestamp (milliseconds) to Instant
-        // Keycloak uses milliseconds since epoch; use current time if timestamp is missing
-        Instant createdAt = userRep.getCreatedTimestamp() != null
-                ? Instant.ofEpochMilli(userRep.getCreatedTimestamp())
-                : Instant.now();
-
-        return new UserResponse(
+    private KeycloakUserDto mapToKeycloakUserDto(UserRepresentation userRep){
+        return new KeycloakUserDto(
                 userRep.getId(),
                 userRep.getUsername(),
+                userRep.getFirstName(),
+                userRep.getLastName(),
                 userRep.getEmail(),
-                userRep.getFirstName(), // Passing raw first name
-                userRep.getLastName(),  // Passing raw last name
-                fullName,               // Passing calculated full name
+                userRep.isEnabled(),
                 userRep.isEmailVerified(),
-                createdAt
+                userRep.getCreatedTimestamp()
         );
     }
+
 
     private boolean setIfChanged(String newValue, String currentValue, Consumer<String> setter) {
         if (newValue != null && !newValue.isBlank() && !newValue.equals(currentValue)) {

@@ -59,7 +59,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         log.info("Keycloak Admin Client initialized successfully.");
     }
 
-    // --- User Lookup Operations (Now returning KeycloakUserDto) ---
+    // --- AppUser Lookup Operations (Now returning KeycloakUserDto) ---
 
     public Optional<UserRepresentation> findUserByUserId(String userId) {
         try {
@@ -87,7 +87,12 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         return getUsersResource().list(firstResult, size);
     }
 
-    // --- User Management Operations ---
+    public List<UserRepresentation> listAllUsers() {
+        // Directly return all users
+        return getUsersResource().list();
+    }
+
+    // --- AppUser Management Operations ---
 
     /**
      * Creates a user in Keycloak and returns the newly generated ID.
@@ -105,7 +110,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
             return CreatedResponseUtil.getCreatedId(response);
         } catch (BadRequestException e) {
             log.error("Keycloak user creation failed with a BadRequest.", e);
-            throw new RuntimeException("User creation failed due to a policy violation.", e);
+            throw new RuntimeException("AppUser creation failed due to a policy violation.", e);
         }
     }
 
@@ -140,6 +145,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     public void assignUserRole(String userId, ForumRole role) {
         try {
             UserResource userResource = getUsersResource().get(userId);
+
             var roleRep = getRealmResource().roles().get(role.getRoleName()).toRepresentation();
             userResource.roles().realmLevel().add(Collections.singletonList(roleRep));
             log.info("Assigned role {} to user {}", role.getRoleName(), userId);

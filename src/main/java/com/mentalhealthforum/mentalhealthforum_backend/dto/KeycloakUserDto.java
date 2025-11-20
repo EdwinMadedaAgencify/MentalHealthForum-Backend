@@ -6,7 +6,7 @@ import java.time.Instant;
 
 /**
  * DTO representing the essential authoritative user data extracted from the
- * external Identity Provider's User Representation payload.
+ * external Identity Provider's AppUser Representation payload.
  * This is used INTERNALLY within the service layer for mapping and audit.
  */
 public record KeycloakUserDto(

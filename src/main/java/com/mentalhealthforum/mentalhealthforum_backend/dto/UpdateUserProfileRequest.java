@@ -13,5 +13,8 @@ public record UpdateUserProfileRequest(
         String firstName,
 
         @Size(max = 50, message = "Last name cannot exceed 50 characters.")
-        String lastName
+        String lastName,
+
+        @Size(max = 500, message = "Bio cannot exceed 500 characters.")
+        String bio
 ) {}

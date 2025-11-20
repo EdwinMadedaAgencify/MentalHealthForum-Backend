@@ -13,13 +13,19 @@ public enum ErrorCode {
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "The requested media type is not supported for this endpoint."),
 
 
-    // --- Authentication/User Management Errors ---
+    // --- Authentication/AppUser Management Errors ---
     USER_ALREADY_EXISTS(HttpStatus.CONFLICT, "An account already exists with this username or email."),
     USER_DOES_NOT_EXIST(HttpStatus.NOT_FOUND, "The requested user account was not found."),
+
+    // --- Keycloak Sync Errors ---
+    KEYCLOAK_SYNC_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "An error occurred while syncing user data."),
 
     // --- Password/Policy Errors ---
     PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "Password does not meet required complexity standards."),
     PASSWORD_CONFIRM_MISMATCH(HttpStatus.BAD_REQUEST, "Password and Confirmation do not match."),
+
+    // --- Pagination Error ---
+    INVALID_PAGINATION(HttpStatus.BAD_REQUEST, "Invalid pagination parameters. Page and size must be valid and positive."),
 
     // Authentication Failure (401)
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Authentication failed. Invalid or missing credentials."),
@@ -29,7 +35,7 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "Access denied. You do not have sufficient permissions for this resource."),
 
     // --- Action Required Error ---
-    USER_ACTION_REQUIRED(HttpStatus.FORBIDDEN, "User authentication succeeded but requires further action."),
+    USER_ACTION_REQUIRED(HttpStatus.FORBIDDEN, "AppUser authentication succeeded but requires further action."),
 
     // --- Generic Fallback ---
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal server error occurred.");

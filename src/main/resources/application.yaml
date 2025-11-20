@@ -16,7 +16,7 @@ spring:
   # R2DBC Database Configuration (MOVED & FIXED INDENTATION)
   # ----------------------------------------------------------------------
   r2dbc:
-    url: r2dbc:postgresql://forum-db:5432/forum
+    url: r2dbc:postgresql://forum-db:5434/forum
     username: forum_user
     password: forum_password
 

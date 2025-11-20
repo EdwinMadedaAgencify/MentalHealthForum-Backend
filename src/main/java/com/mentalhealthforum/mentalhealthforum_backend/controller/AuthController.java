@@ -79,7 +79,7 @@ public class AuthController {
                 });
     }
     /**
-     * User logout (Token Revocation).
+     * AppUser logout (Token Revocation).
      */
     @PostMapping("/logout")
     public Mono<ResponseEntity<StandardSuccessResponse<Void>>> logoutUser(
