@@ -2,10 +2,10 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
+import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
-import com.mentalhealthforum.mentalhealthforum_backend.service.impl.AppUserService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.impl.AppUserServiceImpl;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +28,7 @@ public class UserController {
     private final UserService userService;
     private final AppUserService appUserService;
 
-    public UserController(UserService userService, AuthService authService, AppUserService appUserService) {
+    public UserController(UserService userService, AuthService authService, AppUserServiceImpl appUserService) {
         this.userService = userService;
         this.appUserService = appUserService;
     }
@@ -50,7 +50,7 @@ public class UserController {
                     // Step 2: Retrieve user data from Keycloak, Create the local profile and Return the userId
                     return userService.getUser(userId)
                             // 3. Create the initial internal application profile
-                            .flatMap(appUserService::createInitialProfile)
+                            .flatMap(appUserService::syncUserViaAdminClient)
                             // 4. Discard AppUser result, continue the stream with the original userId
                             .thenReturn(userId);
                 })
@@ -70,27 +70,33 @@ public class UserController {
     }
 
     @GetMapping("/{userId}")
-    public Mono<ResponseEntity<StandardSuccessResponse<AppUser>>> getUser(
+    public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> getUser(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String userId
     ) {
         final String currentUserId = jwt.getSubject();
 
+        //   Mono<Void> syncMono = currentUserId.equals(userId)
+        //      ? appUserService.syncUserViaAPI(jwt.getTokenValue()).then()
+        //      : Mono.empty();
+
         Mono<Void> syncMono = currentUserId.equals(userId)
-                ? appUserService.syncProfile(jwt.getTokenValue()).then()
+                ? userService.getUser(userId)
+                    .flatMap(appUserService::syncUserViaAdminClient)
+                    .then()
                 : Mono.empty();
 
         return syncMono
                 .then(appUserService.getAppUserWithSelfFlag(userId, currentUserId))
                 .map(user -> {
                     String message = "User details retrieved successfully";
-                    StandardSuccessResponse<AppUser> response = new StandardSuccessResponse<>(message, user);
+                    StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, user);
                     return ResponseEntity.ok(response);
                 });
     }
 
     @GetMapping
-    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<AppUser>>>> getAllUsers(
+    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<UserResponse>>>> getAllUsers(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size){
@@ -101,20 +107,20 @@ public class UserController {
         return appUserService.getAllAppUsersWithSelfFlag(currentUserId, page, size)
                 .map(paginatedUsers -> {
                     String message = "Paginated user records retrieved successfully.";
-                    StandardSuccessResponse<PaginatedResponse<AppUser>> response = new StandardSuccessResponse<>(message, paginatedUsers);
+                    StandardSuccessResponse<PaginatedResponse<UserResponse>> response = new StandardSuccessResponse<>(message, paginatedUsers);
                     return ResponseEntity.ok(response);
                 });
     }
 
     @PatchMapping("/{userId}")
-    public Mono<ResponseEntity<StandardSuccessResponse<AppUser>>> updateUserProfile(
+    public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> updateUserProfile(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String userId,
             @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) {
 
         final String currentUserId = jwt.getSubject();
 
-        if(!currentUserId.equals(userId)){
+        if (!currentUserId.equals(userId)) {
             throw new InsufficientPermissionException("Forbidden: Cannot update another user's profile.");
         }
 
@@ -123,30 +129,33 @@ public class UserController {
                 .doOnError(e -> log.error("Keycloak update failed: {}", e.getMessage()));
 
         // Local DB update Mono
-        Mono<AppUser>  localUpdate = appUserService.updateLocalProfile(userId, updateUserProfileRequest)
+        Mono<UserResponse> localUpdate = appUserService.updateLocalProfile(userId, updateUserProfileRequest)
                 .map(appUser -> {
                     appUser.setSelf(true);
                     return appUser;
                 })
                 .doOnError(e -> log.error("Local DB update failed: {}", e.getMessage()));
 
-        return Mono.zipDelayError(keycloakUpdate, localUpdate)
-                .map(tuple ->{
+        return Mono.zip(keycloakUpdate, localUpdate)
+                .map(tuple -> {
                     String message = "User updated successfully.";
-                    StandardSuccessResponse<AppUser> response = new StandardSuccessResponse<>(message, tuple.getT2());
+                    StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, tuple.getT2());
                     return ResponseEntity.ok(response);
                 })
-                .onErrorResume(e -> {
-                    // Handle partial or total failure gracefully
-                    log.error("Profile update encountered an error: {}", e.getMessage(), e);
+                .onErrorResume(throwable -> {
+
+                    log.error("Error occurred during profile update: {}", throwable.getMessage(), throwable);
+
+                    // Return a generic error message to the user
+                    String message = "Profile update failed. Please try again later.";
                     return appUserService.getAppUserWithSelfFlag(currentUserId, currentUserId)
-                            .map(userWithSelf ->{
-                                String message = "Profile update partially failed: " + e.getMessage();
-                                StandardSuccessResponse<AppUser> response = new StandardSuccessResponse<>(message, userWithSelf);
+                            .map(userWithSelf -> {
+                                StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, userWithSelf);
                                 return ResponseEntity.status(500).body(response);
                             });
                 });
     }
+
 
     @PostMapping("/reset-password")
     public Mono<ResponseEntity<StandardSuccessResponse<Void>>> resetPassword(
@@ -184,12 +193,12 @@ public class UserController {
         Mono<Void> localDelete = appUserService.deleteLocalProfile(userId)
                 .doOnError(e -> log.error("Local DB deletion failed: {}", e.getMessage()));
 
-        return Mono.zipDelayError(keycloakDelete, localDelete)
+        return Mono.zip(keycloakDelete, localDelete)
                 .thenReturn(ResponseEntity.noContent().build())
                 .onErrorResume(e -> {
                     log.error("User deletion partially failed: {}", e.getMessage(), e);
                     // Return 500 with a message; 204 is only for full success
-                    StandardSuccessResponse<Void> response = new StandardSuccessResponse<>("User deletion partially failed: " + e.getMessage());
+                    StandardSuccessResponse<Void> response = new StandardSuccessResponse<>("User deletion partially failed");
                     return Mono.just(ResponseEntity.status(500).body(response));
                 });
     }

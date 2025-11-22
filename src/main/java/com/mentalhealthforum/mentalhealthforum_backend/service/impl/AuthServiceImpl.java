@@ -81,6 +81,9 @@ public class AuthServiceImpl implements AuthService {
         formData.add("username", request.username());
         formData.add("password", request.password());
 
+        // 3. Adding 'openid' scope for userinfo endpoint access
+        formData.add("scope", "openid");
+
         return webClient.post()
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData(formData))

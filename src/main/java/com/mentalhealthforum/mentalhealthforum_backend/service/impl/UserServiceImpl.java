@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -27,13 +26,11 @@ public class UserServiceImpl implements UserService {
     private static final ForumRole DEFAULT_FORUM_ROLE = ForumRole.FORUM_MEMBER;
 
     private final KeycloakAdminManagerImpl adminManager;
-    private final AppUserService appUserService;
 
 
     // Inject the new KeycloakAdminManagerImpl
-    public UserServiceImpl(KeycloakAdminManagerImpl adminManager, AppUserService appUserService) {
+    public UserServiceImpl(KeycloakAdminManagerImpl adminManager, AppUserServiceImpl appUserService) {
         this.adminManager = adminManager;
-        this.appUserService = appUserService;
     }
 
     // ------------------ Public API Methods (Reactive Wrappers) ------------------

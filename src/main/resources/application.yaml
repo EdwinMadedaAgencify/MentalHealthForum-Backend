@@ -16,7 +16,7 @@ spring:
   # R2DBC Database Configuration (MOVED & FIXED INDENTATION)
   # ----------------------------------------------------------------------
   r2dbc:
-    url: r2dbc:postgresql://forum-db:5434/forum
+    url: r2dbc:postgresql://localhost:5434/forum
     username: forum_user
     password: forum_password
 
@@ -39,6 +39,8 @@ logging:
 
     # R2DBC Logging
     io.r2dbc: DEBUG
+    org.springframework.data.r2dbc: DEBUG
+    org.springframework.jdbc.core: DEBUG
 
     # -----------------------------------------------------
     # LOG KEYCLOAK'S UNDERLYING HTTP TRAFFIC

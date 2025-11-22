@@ -1,6 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.Instant;
 
@@ -9,28 +10,35 @@ import java.time.Instant;
  * It calculates the full name and excludes sensitive Keycloak fields, providing
  * a clean contract with the frontend.
  */
-public record UserResponse(
-        @JsonProperty("userId")
-        String userId,
+@Setter
+@Getter
+public class UserResponse {
 
-        @JsonProperty("username")
-        String username,
+    private String userId;  // The Keycloak ID
+    private String email;
+    private String username;
+    private String firstName;
+    private String lastName;
+    private String bio;
+    private Instant dateJoined;
+    private boolean isSelf;
 
-        @JsonProperty("email")
-        String email,
-
-        @JsonProperty("firstName")
-        String firstName,
-
-        @JsonProperty("lastName")
-        String lastName,
-
-        @JsonProperty("fullName")
-        String fullName, // Derived field combining first and last name
-
-        @JsonProperty("emailVerified")
-        boolean emailVerified,
-
-        @JsonProperty("createdAt")
-        Instant createdAt
-) {}
+    public UserResponse(
+            String userId,
+            String email,
+            String username,
+            String firstName,
+            String lastName,
+            String bio,
+            Instant dateJoined,
+            boolean isSelf) {
+        this.userId = userId;
+        this.email = email;
+        this.username = username;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.bio = bio;
+        this.dateJoined = dateJoined;
+        this.isSelf = isSelf;
+    }
+}

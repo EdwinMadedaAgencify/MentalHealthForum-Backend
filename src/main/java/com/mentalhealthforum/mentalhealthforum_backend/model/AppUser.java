@@ -18,15 +18,17 @@ import java.time.Instant;
 
 @Setter
 @Getter
-@Table("app_user")
+@Table("app_users")
 public class AppUser {
 
     // --- Getters and Setters (Omitted for brevity, but required) ---
     // The Keycloak ID serves as the Primary Key in our application database.
     @Id
+    private Long id; // Auto-incremented, internal identifier for database management
+
     @Column("keycloak_id")
     @NotBlank
-    private String keycloakId;
+    private String keycloakId; // External identifier provided by Keycloak (business key)
 
     // Authoritative data synced from Keycloak's userinfo endpoint
     @Email
@@ -58,7 +60,7 @@ public class AppUser {
 
     public AppUser(){
         this.dateJoined = Instant.now();
-        this.bio = "New member of the Mental Health Forum.";
+        this.bio = "Hi, I'm here to connect, learn and grow. Let's support each other!";
     }
 
     public AppUser(
