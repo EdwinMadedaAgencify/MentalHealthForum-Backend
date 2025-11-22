@@ -15,6 +15,8 @@ import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.admin.client.resource.UsersResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +63,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
 
     // --- AppUser Lookup Operations (Now returning KeycloakUserDto) ---
 
+    @Override
     public Optional<UserRepresentation> findUserByUserId(String userId) {
         try {
             return Optional.of(getUsersResource().get(userId).toRepresentation());
@@ -69,24 +72,29 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         }
     }
 
+    @Override
     public Optional<UserRepresentation> findUserByUsername(String username) {
         if (username == null || username.isBlank()) return Optional.empty();
         return getUsersResource().searchByUsername(username.trim(), true).stream().findFirst();
     }
 
+    @Override
     public Optional<UserRepresentation> findUserByEmail(String email) {
         if (email == null || email.isBlank()) return Optional.empty();
         return getUsersResource().searchByEmail(email.trim(), true).stream().findFirst();
     }
 
+    @Override
     public long countUsers() {
         return getUsersResource().count();
     }
 
+    @Override
     public List<UserRepresentation> listUsers(int firstResult, int size) {
         return getUsersResource().list(firstResult, size);
     }
 
+    @Override
     public List<UserRepresentation> listAllUsers() {
         // Directly return all users
         return getUsersResource().list();
@@ -97,6 +105,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     /**
      * Creates a user in Keycloak and returns the newly generated ID.
      */
+    @Override
     public String createUser(UserRepresentation user) {
         try (Response response = getUsersResource().create(user)) {
             if (response.getStatus() == Response.Status.CONFLICT.getStatusCode()) {
@@ -114,14 +123,17 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         }
     }
 
+    @Override
     public void updateUser(UserRepresentation userRep) {
         getUsersResource().get(userRep.getId()).update(userRep);
     }
 
+    @Override
     public void deleteUser(String userId) {
         getUsersResource().get(userId).remove();
     }
 
+    @Override
     public void resetPassword(String userId, String newPassword) throws InvalidPasswordException {
         CredentialRepresentation passwordCred = createPasswordCredential(newPassword);
         UserResource userResource = getUsersResource().get(userId);
@@ -140,12 +152,44 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         }
     }
 
-    // --- Credential and Role Helpers (Now managed here) ---
+    // --- Role, Groups and Credential Helpers (Now managed here) ---
 
+    @Override
+    public List<String> getUserRealmRoles(String userId){
+        try {
+            return getUsersResource().get(userId)
+                    .roles()
+                    .realmLevel()
+                    .listAll()
+                    .stream()
+                    .map(RoleRepresentation::getName)
+                    .toList();
+
+        } catch (Exception e){
+            log.error("Failed to fetch roles for user {}", userId, e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public List<String> getUserGroups(String userId){
+        try {
+            return getUsersResource().get(userId)
+                    .groups()
+                    .stream()
+                    .map(GroupRepresentation::getName)
+                    .toList();
+
+        } catch (Exception e){
+            log.error("Failed to fetch groups for user {}", userId, e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
     public void assignUserRole(String userId, ForumRole role) {
         try {
             UserResource userResource = getUsersResource().get(userId);
-
             var roleRep = getRealmResource().roles().get(role.getRoleName()).toRepresentation();
             userResource.roles().realmLevel().add(Collections.singletonList(roleRep));
             log.info("Assigned role {} to user {}", role.getRoleName(), userId);
@@ -155,6 +199,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         }
     }
 
+    @Override
     public CredentialRepresentation createPasswordCredential(String password) throws InvalidPasswordException {
         if (password == null || password.length() < 8) {
             throw new InvalidPasswordException("Password must be at least 8 characters long.");

@@ -1,9 +1,11 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * The official DTO returned to clients for displaying user profile information.
@@ -14,7 +16,7 @@ import java.time.Instant;
 @Getter
 public class UserResponse {
 
-    private String userId;  // The Keycloak ID
+    private UUID userId;  // The Keycloak ID
     private String email;
     private String username;
     private String firstName;
@@ -24,7 +26,7 @@ public class UserResponse {
     private boolean isSelf;
 
     public UserResponse(
-            String userId,
+            UUID userId,
             String email,
             String username,
             String firstName,

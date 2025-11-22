@@ -7,6 +7,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesN
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.PaginationUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.HashSet;
+import java.util.List;
+
+import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.*;
 
 /**
  * Handles part of the user-related business logic, including profile synchronization
@@ -26,14 +32,16 @@ public class AppUserServiceImpl implements AppUserService {
     private static final Logger log = LoggerFactory.getLogger(AppUserServiceImpl.class);
 
     private final AppUserRepository appUserRepository;
+    private final KeycloakAdminManager adminManager;
     private final WebClient webClient;
     private final  String userInfoUri;
 
     public AppUserServiceImpl(
             AppUserRepository appUserRepository,
             WebClient.Builder webClientBuilder,
-            KeycloakProperties keycloakProperties) {
+            KeycloakProperties keycloakProperties, KeycloakAdminManager adminManager) {
         this.appUserRepository = appUserRepository;
+        this.adminManager = adminManager;
 
         String authServerUrl = keycloakProperties.getAuthServerUrl();
         String realm = keycloakProperties.getRealm();
@@ -47,32 +55,50 @@ public class AppUserServiceImpl implements AppUserService {
      * This is the backend's orchestration point for new users.
      */
     public Mono<UserResponse> syncUserViaAdminClient(KeycloakUserDto keycloakUserDto){
-        AppUser newUserDetails = new AppUser(
+        AppUser userDetails = new AppUser(
                 keycloakUserDto.id(),
                 keycloakUserDto.email(),
                 keycloakUserDto.username(),
                 keycloakUserDto.firstName(),
                 keycloakUserDto.lastName());
 
-        // We set the date here regardless, but it will only be persisted on INSERT.
-        newUserDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
-        newUserDetails.setDateJoined(keycloakUserDto.getCreatedInstant());
+        // Set fields that are only relevant on INSERT
+        userDetails.setIsEnabled(keycloakUserDto.enabled());
+        userDetails.setDateJoined(keycloakUserDto.getCreatedInstant());
 
-        return appUserRepository.findAppUserByKeycloakId(newUserDetails.getKeycloakId())
+        // Fetch roles and groups from Keycloak
+        List<String> roles = adminManager.getUserRealmRoles(keycloakUserDto.id());
+        List<String> groups = adminManager.getUserGroups(keycloakUserDto.id());
+
+        // Convert to sets for local storage
+        userDetails.setRoles(new HashSet<>(roles));
+        userDetails.setGroups(new HashSet<>(groups));
+
+        return appUserRepository.findAppUserByKeycloakId(String.valueOf(userDetails.getKeycloakId()))
                 .flatMap(existingUser -> {
-                    // 2. User exists: Update/Sync authoritative Keycloak fields
-                    existingUser.setEmail(newUserDetails.getEmail());
-                    existingUser.setUsername(newUserDetails.getUsername());
-                    existingUser.setFirstName(newUserDetails.getFirstName());
-                    existingUser.setLastName(newUserDetails.getLastName());
+                    // --- Incrementally sync Keycloak-authoritative fields ---
+                    boolean localNeedsUpdate = false;
+
+                    // Incremental sync for Keycloak-authoritative fields
+                    localNeedsUpdate |= setIfChanged(userDetails.getEmail(), existingUser.getEmail(), existingUser::setEmail);
+                    localNeedsUpdate |= setIfChanged(userDetails.getUsername(), existingUser.getUsername(), existingUser::setUsername);
+                    localNeedsUpdate |= setIfChanged(userDetails.getFirstName(), existingUser.getFirstName(), existingUser::setFirstName);
+                    localNeedsUpdate |= setIfChanged(userDetails.getLastName(), existingUser.getLastName(), existingUser::setLastName);
+
+                    // Incremental sync for status & cached fields
+                    localNeedsUpdate |= setIfChanged(userDetails.getIsEnabled(), existingUser.getIsEnabled(), existingUser::setIsEnabled);
+                    localNeedsUpdate |= setIfChanged(userDetails.getRoles(), existingUser.getRoles(), existingUser::setRoles);
+                    localNeedsUpdate |= setIfChanged(userDetails.getGroups(), existingUser.getGroups(), existingUser::setGroups);
+
 
                     // R2DBC performs an UPDATE here.
-                    return appUserRepository.save(existingUser);
+                    return localNeedsUpdate ? appUserRepository.save(existingUser) : Mono.just(existingUser);
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // 3. User does NOT exist: Insert the new user
+                    //  User does NOT exist: Insert the new user
                     // R2DBC performs an INSERT here.
-                    return appUserRepository.save(newUserDetails);
+                    userDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
+                    return appUserRepository.save(userDetails);
                 }))
                 .map(this::mapToUserResponse);
     }
@@ -180,15 +206,25 @@ public class AppUserServiceImpl implements AppUserService {
                 .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
                 .flatMap(appUser -> {
 
-                    if(updateUserProfileRequest.email() != null) appUser.setEmail(updateUserProfileRequest.email().trim());
+                    boolean localNeedsUpdate = false;
 
-                    if(updateUserProfileRequest.firstName() != null) appUser.setFirstName(updateUserProfileRequest.firstName().trim());
+                    // --- Keycloak-authoritative fields ---
+                    localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.email(), appUser.getEmail(), appUser::setEmail);
+                    localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.firstName(), appUser.getFirstName(), appUser::setFirstName);
+                    localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.lastName(), appUser.getLastName(), appUser::setLastName);
 
-                    if(updateUserProfileRequest.lastName() != null) appUser.setLastName(updateUserProfileRequest.lastName().trim());
+                    // --- User-controlled fields (allow null/blank to clear) --
+                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.displayName(), appUser.getDisplayName(), appUser::setDisplayName);
+                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.bio(), appUser.getBio(), appUser::setBio);
+                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.avatarUrl(), appUser.getAvatarUrl(), appUser::setAvatarUrl);
+                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.getTimezone(), appUser::setTimezone);
 
-                    if(updateUserProfileRequest.bio() != null) appUser.setBio(updateUserProfileRequest.bio().trim());
+                    // --- Boolean & Set fields ---
+                    localNeedsUpdate |= setIfChanged(updateUserProfileRequest.prefersAnonymity(), appUser.getPrefersAnonymity(), appUser::setPrefersAnonymity);
+                    localNeedsUpdate |= setIfChanged(updateUserProfileRequest.notificationPreferences(), appUser.getNotificationPreferences(), appUser::setNotificationPreferences);
 
-                    return appUserRepository.save(appUser);
+                    // --- Persist only if any changes ---
+                    return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);
                 })
                 .map(this::mapToUserResponse);
     }
@@ -206,7 +242,7 @@ public class AppUserServiceImpl implements AppUserService {
      * Utility method to set the 'isSelf' flag on the user object.
      */
     private AppUser setSelfFlagIfCurrentUser(AppUser appUser, String currentUserId){
-        if(appUser.getKeycloakId().equals(currentUserId)){
+        if(appUser.getKeycloakId().toString().equals(currentUserId)){
             appUser.setSelf(true);
         }
         return appUser;

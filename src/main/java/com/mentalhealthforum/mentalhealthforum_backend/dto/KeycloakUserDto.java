@@ -3,6 +3,8 @@ package com.mentalhealthforum.mentalhealthforum_backend.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 
 /**
  * DTO representing the essential authoritative user data extracted from the
@@ -33,7 +35,6 @@ public record KeycloakUserDto(
      * @return Instant object representing the user's creation time in Keycloak.
      */
     public Instant getCreatedInstant() {
-        if (createdTimestampMs == null) return null;
-        return Instant.ofEpochMilli(createdTimestampMs);
+        return  (createdTimestampMs == null)? null : Instant.ofEpochMilli(createdTimestampMs);
     }
 }

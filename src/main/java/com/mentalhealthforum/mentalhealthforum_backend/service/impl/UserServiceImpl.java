@@ -5,6 +5,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
+import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
@@ -16,7 +17,8 @@ import reactor.core.scheduler.Schedulers;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Consumer;
+
+import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.setIfChangedStrict;
 
 
 @Service
@@ -25,11 +27,10 @@ public class UserServiceImpl implements UserService {
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
     private static final ForumRole DEFAULT_FORUM_ROLE = ForumRole.FORUM_MEMBER;
 
-    private final KeycloakAdminManagerImpl adminManager;
-
+    private final KeycloakAdminManager adminManager;
 
     // Inject the new KeycloakAdminManagerImpl
-    public UserServiceImpl(KeycloakAdminManagerImpl adminManager, AppUserServiceImpl appUserService) {
+    public UserServiceImpl(KeycloakAdminManager adminManager) {
         this.adminManager = adminManager;
     }
 
@@ -84,27 +85,28 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Mono<KeycloakUserDto> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest) {
+    public Mono<KeycloakUserDto> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest){
         return Mono.fromCallable(() -> {
+                    // Fetch user from Keycloak
                     UserRepresentation userRep = adminManager.findUserByUserId(userId)
                             .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
 
-                    boolean isUpdated = false;
+                    boolean keycloakNeedsUpdate = false;
 
-                    isUpdated |= setIfChanged(updateUserProfileRequest.firstName(), userRep.getFirstName(), userRep::setFirstName);
-                    isUpdated |= setIfChanged(updateUserProfileRequest.lastName(), userRep.getLastName(), userRep::setLastName);
+                    keycloakNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.firstName(), userRep.getFirstName(), userRep::setFirstName);
+                    keycloakNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.lastName(), userRep.getLastName(), userRep::setLastName);
 
                     String newEmail = updateUserProfileRequest.email() != null ? updateUserProfileRequest.email().trim().toLowerCase() : null;
                     Optional<UserRepresentation> existingUserWithNewEmail = adminManager.findUserByEmail(newEmail);
-
                     if (existingUserWithNewEmail.isPresent() && !existingUserWithNewEmail.get().getId().equals(userId)) {
                         throw new UserExistsException("The new email address is already in use by another account.");
                     }
 
-                    isUpdated |= setIfChanged(newEmail, userRep.getEmail(), userRep::setEmail);
+                    keycloakNeedsUpdate |= setIfChangedStrict(newEmail, userRep.getEmail(), userRep::setEmail);
 
-                    if (isUpdated) {
-                        adminManager.updateUser(userRep); // Blocking update
+                    // Perform update only if any changes detected
+                    if (keycloakNeedsUpdate) {
+                        adminManager.updateUser(userRep); // blocking Keycloak update
                         log.info("Successfully updated profile for user ID: {}", userId);
                     } else {
                         log.debug("No profile changes detected for user ID: {}", userId);
@@ -187,14 +189,5 @@ public class UserServiceImpl implements UserService {
                 userRep.isEmailVerified(),
                 userRep.getCreatedTimestamp()
         );
-    }
-
-
-    private boolean setIfChanged(String newValue, String currentValue, Consumer<String> setter) {
-        if (newValue != null && !newValue.isBlank() && !newValue.equals(currentValue)) {
-            setter.accept(newValue);
-            return true;
-        }
-        return false;
     }
 }

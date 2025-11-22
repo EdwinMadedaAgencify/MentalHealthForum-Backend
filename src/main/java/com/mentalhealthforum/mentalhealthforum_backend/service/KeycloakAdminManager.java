@@ -27,6 +27,8 @@ public interface KeycloakAdminManager {
 
     List<UserRepresentation> listUsers(int firstResult, int size);
 
+    List<UserRepresentation> listAllUsers();
+
     // --- AppUser Management Operations ---
 
     String createUser(UserRepresentation user);
@@ -40,6 +42,10 @@ public interface KeycloakAdminManager {
     // --- Credential and Role Helpers ---
 
     void assignUserRole(String userId, ForumRole role);
+
+    List<String> getUserRealmRoles(String userId);
+
+    List<String> getUserGroups(String userId);
 
     CredentialRepresentation createPasswordCredential(String password) throws InvalidPasswordException;
 }

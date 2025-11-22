@@ -19,7 +19,10 @@ public record UserInfoDto(
         @JsonProperty("family_name") String familyName,  // maps to lastName
 
         // Additional claims (for roles/permissions)
-        @JsonProperty("realm_access") RealmAccess realmAccess
+        @JsonProperty("realm_access") RealmAccess realmAccess,
+
+        // Groups the user is a part of
+        Set<String> groups
 ) {
     /**
      * Nested record to capture Keycloak's realm_access claim, which contains roles.

@@ -80,11 +80,9 @@ public class UserController {
         //      ? appUserService.syncUserViaAPI(jwt.getTokenValue()).then()
         //      : Mono.empty();
 
-        Mono<Void> syncMono = currentUserId.equals(userId)
-                ? userService.getUser(userId)
-                    .flatMap(appUserService::syncUserViaAdminClient)
-                    .then()
-                : Mono.empty();
+        Mono<Void> syncMono = userService.getUser(userId)
+                .flatMap(appUserService::syncUserViaAdminClient)
+                .then();
 
         return syncMono
                 .then(appUserService.getAppUserWithSelfFlag(userId, currentUserId))
@@ -120,22 +118,26 @@ public class UserController {
 
         final String currentUserId = jwt.getSubject();
 
+        // Check if the logged-in user is updating their own profile
         if (!currentUserId.equals(userId)) {
             throw new InsufficientPermissionException("Forbidden: Cannot update another user's profile.");
         }
+
 
         // Keycloak update Mono
         Mono<KeycloakUserDto> keycloakUpdate = userService.updateUserProfile(userId, updateUserProfileRequest)
                 .doOnError(e -> log.error("Keycloak update failed: {}", e.getMessage()));
 
+
         // Local DB update Mono
         Mono<UserResponse> localUpdate = appUserService.updateLocalProfile(userId, updateUserProfileRequest)
                 .map(appUser -> {
-                    appUser.setSelf(true);
+                    appUser.setSelf(true); // Mark as the self user for response
                     return appUser;
                 })
                 .doOnError(e -> log.error("Local DB update failed: {}", e.getMessage()));
 
+        // Perform both updates simultaneously
         return Mono.zip(keycloakUpdate, localUpdate)
                 .map(tuple -> {
                     String message = "User updated successfully.";

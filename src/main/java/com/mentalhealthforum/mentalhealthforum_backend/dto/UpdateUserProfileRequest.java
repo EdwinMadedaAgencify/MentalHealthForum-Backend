@@ -3,6 +3,8 @@ package com.mentalhealthforum.mentalhealthforum_backend.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 
+import java.util.Set;
+
 public record UpdateUserProfileRequest(
 
         @Email(message = "Email must be a valid email format.")
@@ -16,5 +18,19 @@ public record UpdateUserProfileRequest(
         String lastName,
 
         @Size(max = 500, message = "Bio cannot exceed 500 characters.")
-        String bio
+        String bio,
+
+        @Size(max = 100, message = "Display name cannot exceed 100 characters.")
+        String displayName,
+
+        @Size(max = 255, message = "Avatar URL cannot exceed 255 characters.")
+        String avatarUrl,
+
+        String timezone,   // could add a pattern validation if needed
+
+        String language,   // could validate against supported languages
+
+        Boolean prefersAnonymity,
+
+        Set<String> notificationPreferences
 ) {}
