@@ -1,5 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.enums;
 
+import lombok.Getter;
+
+@Getter
 public enum ForumRole {
     FORUM_MEMBER("forum_member"),
     TRUSTED_MEMBER("trusted_member"),
@@ -13,7 +16,4 @@ public enum ForumRole {
         this.roleName = roleName;
     }
 
-    public String getRoleName(){
-        return roleName;
-    }
 }

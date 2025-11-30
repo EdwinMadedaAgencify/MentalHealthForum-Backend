@@ -16,9 +16,12 @@ spring:
   # R2DBC Database Configuration (MOVED & FIXED INDENTATION)
   # ----------------------------------------------------------------------
   r2dbc:
-    url: r2dbc:postgresql://localhost:5434/forum
+    host: localhost
+    port: 5434
+    database: forum
     username: forum_user
     password: forum_password
+#    url: r2dbc:postgresql://localhost:5434/forum
 
   sql:
     # Disable schema initialization if you are using a migration tool (like Flyway)

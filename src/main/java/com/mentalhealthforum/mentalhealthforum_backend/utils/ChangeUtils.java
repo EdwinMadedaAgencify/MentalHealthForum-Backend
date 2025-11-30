@@ -1,9 +1,12 @@
 package com.mentalhealthforum.mentalhealthforum_backend.utils;
 
+import reactor.core.publisher.Mono;
+
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Utility class for safely updating fields only if their values have changed.
@@ -43,14 +46,6 @@ public final class ChangeUtils {
         }
         return false;
     }
-
-
-
-
-
-
-
-
 
     // --- String version ---
     public static boolean setIfChanged(String newValue, String currentValue, Consumer<String> setter) {

@@ -28,6 +28,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     // Core Spring Data R2DBC support
     implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
+    implementation("org.postgresql:r2dbc-postgresql:1.1.1.RELEASE")
+    //implementation("io.r2dbc:r2dbc-postgresql:0.8.13.RELEASE")  // The PostgreSQL-specific R2DBC driver
 
     implementation("org.keycloak:keycloak-admin-client:26.0.7")
     implementation("org.springdoc:springdoc-openapi-starter-webflux-ui:2.8.14")
@@ -35,8 +37,7 @@ dependencies {
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
 
-    // The PostgreSQL-specific R2DBC driver
-    runtimeOnly("io.r2dbc:r2dbc-postgresql:0.8.13.RELEASE")
+
 
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.security:spring-security-test")

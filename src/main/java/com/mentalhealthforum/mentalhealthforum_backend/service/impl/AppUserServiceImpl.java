@@ -2,6 +2,8 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.KeycloakSyncException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
@@ -17,6 +19,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 
@@ -73,6 +76,7 @@ public class AppUserServiceImpl implements AppUserService {
         // Convert to sets for local storage
         userDetails.setRoles(new HashSet<>(roles));
         userDetails.setGroups(new HashSet<>(groups));
+        userDetails.setLastSyncedAt(Instant.now());
 
         return appUserRepository.findAppUserByKeycloakId(String.valueOf(userDetails.getKeycloakId()))
                 .flatMap(existingUser -> {
@@ -89,7 +93,6 @@ public class AppUserServiceImpl implements AppUserService {
                     localNeedsUpdate |= setIfChanged(userDetails.getIsEnabled(), existingUser.getIsEnabled(), existingUser::setIsEnabled);
                     localNeedsUpdate |= setIfChanged(userDetails.getRoles(), existingUser.getRoles(), existingUser::setRoles);
                     localNeedsUpdate |= setIfChanged(userDetails.getGroups(), existingUser.getGroups(), existingUser::setGroups);
-
 
                     // R2DBC performs an UPDATE here.
                     return localNeedsUpdate ? appUserRepository.save(existingUser) : Mono.just(existingUser);
@@ -219,9 +222,22 @@ public class AppUserServiceImpl implements AppUserService {
                     localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.avatarUrl(), appUser.getAvatarUrl(), appUser::setAvatarUrl);
                     localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.getTimezone(), appUser::setTimezone);
 
-                    // --- Boolean & Set fields ---
-                    localNeedsUpdate |= setIfChanged(updateUserProfileRequest.prefersAnonymity(), appUser.getPrefersAnonymity(), appUser::setPrefersAnonymity);
-                    localNeedsUpdate |= setIfChanged(updateUserProfileRequest.notificationPreferences(), appUser.getNotificationPreferences(), appUser::setNotificationPreferences);
+//                    // Enum fields
+//                    localNeedsUpdate |= setIfChangedAllowNull(
+//                            updateUserProfileRequest.profileVisibility(),
+//                            appUser.getProfileVisibility(),
+//                            appUser::setProfileVisibility);
+//
+//                    localNeedsUpdate |= setIfChangedAllowNull(
+//                            updateUserProfileRequest.supportRole(),
+//                            appUser.getSupportRole(),
+//                            appUser::setSupportRole);
+
+                    // Notification preferences (JSON-backed object)
+                    localNeedsUpdate |= setIfChangedAllowNull(
+                            updateUserProfileRequest.notificationPreferences(),
+                            appUser.getNotificationPreferences(),
+                            appUser::setNotificationPreferences);
 
                     // --- Persist only if any changes ---
                     return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);
