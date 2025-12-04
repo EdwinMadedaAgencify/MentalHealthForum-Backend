@@ -2,10 +2,9 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.KeycloakSyncException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
+import com.mentalhealthforum.mentalhealthforum_backend.mapper.UserResponseMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
@@ -36,15 +35,17 @@ public class AppUserServiceImpl implements AppUserService {
 
     private final AppUserRepository appUserRepository;
     private final KeycloakAdminManager adminManager;
+    private final UserResponseMapper userResponseMapper;
     private final WebClient webClient;
     private final  String userInfoUri;
 
     public AppUserServiceImpl(
             AppUserRepository appUserRepository,
             WebClient.Builder webClientBuilder,
-            KeycloakProperties keycloakProperties, KeycloakAdminManager adminManager) {
+            KeycloakProperties keycloakProperties, KeycloakAdminManager adminManager, UserResponseMapper userResponseMapper) {
         this.appUserRepository = appUserRepository;
         this.adminManager = adminManager;
+        this.userResponseMapper = userResponseMapper;
 
         String authServerUrl = keycloakProperties.getAuthServerUrl();
         String realm = keycloakProperties.getRealm();
@@ -59,7 +60,7 @@ public class AppUserServiceImpl implements AppUserService {
      */
     public Mono<UserResponse> syncUserViaAdminClient(KeycloakUserDto keycloakUserDto){
         AppUser userDetails = new AppUser(
-                keycloakUserDto.id(),
+                keycloakUserDto.userId(),
                 keycloakUserDto.email(),
                 keycloakUserDto.username(),
                 keycloakUserDto.firstName(),
@@ -70,8 +71,8 @@ public class AppUserServiceImpl implements AppUserService {
         userDetails.setDateJoined(keycloakUserDto.getCreatedInstant());
 
         // Fetch roles and groups from Keycloak
-        List<String> roles = adminManager.getUserRealmRoles(keycloakUserDto.id());
-        List<String> groups = adminManager.getUserGroups(keycloakUserDto.id());
+        List<String> roles = adminManager.getUserRealmRoles(keycloakUserDto.userId());
+        List<String> groups = adminManager.getUserGroups(keycloakUserDto.userId());
 
         // Convert to sets for local storage
         userDetails.setRoles(new HashSet<>(roles));
@@ -103,18 +104,29 @@ public class AppUserServiceImpl implements AppUserService {
                     userDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
                     return appUserRepository.save(userDetails);
                 }))
-                .map(this::mapToUserResponse);
+                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, keycloakUserDto.userId()));
     }
     /**
-     * Orchestrates the user profile synchronization (The "Token Introspection" step).
+     * @deprecated replaced by {@link #syncUserViaAdminClient(KeycloakUserDto)}
+     * due to limitations in token-based synchronization. The userinfo endpoint lacks critical
+     * metadata (createdTimestamp, enabled status) and is restricted to current user only.
      *
-     * @param accessToken The JWT to be used for the authenticated call to Keycloak.
-     * @return Mono<AppUser> The synchronized internal application User entity.
+     * <p>For user synchronization, use:
+     * <ul>
+     *   <li>{@link #syncUserViaAdminClient(KeycloakUserDto)} - Complete user data sync</li>
+     *   <li>{@link #getAppUserWithSelfFlag(String, String)} - User profile retrieval</li>
+     *   <li>{@link #updateLocalProfile(String, UpdateUserProfileRequest)} - Profile updates</li>
+     * </ul>
+     *
+     * @param accessToken The JWT access token (user-specific)
+     * @return Mono<UserResponse> User profile data
+     * @throws KeycloakSyncException If synchronization fails
      */
+    @Deprecated
     public Mono<UserResponse> syncUserViaAPI(String accessToken){
         return getKeycloakUserInfo(accessToken)
                 .flatMap(this::findOrCreateUser)
-                .map(this::mapToUserResponse)
+                .map(userResponseMapper::toSelfResponse)
                 .onErrorMap(e -> {
                     // Log the technical details of the error internally, but throw a generic exception for the user
                     log.error("Error syncing with Keycloak: {}", e.getMessage(), e);
@@ -181,7 +193,7 @@ public class AppUserServiceImpl implements AppUserService {
     public Mono<UserResponse> getAppUserWithSelfFlag(String userId, String currentUserId) {
         return appUserRepository.findAppUserByKeycloakId(userId)
                 .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
-                .map(appUser -> mapToUserResponse(setSelfFlagIfCurrentUser(appUser, currentUserId)));
+                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, currentUserId));
     }
     /**
      * Fetches all users, applies the 'isSelf' flag, and paginates the result.
@@ -195,7 +207,7 @@ public class AppUserServiceImpl implements AppUserService {
         Flux<AppUser> appUserFlux = appUserRepository.findAll();
 
         // Apply the self flag before passing the Flux to the pagination utility
-        Flux<UserResponse> userResFlux = appUserFlux.map(appUser -> mapToUserResponse(setSelfFlagIfCurrentUser(appUser, currentUserId)));
+        Flux<UserResponse> userResFlux = appUserFlux.map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, currentUserId));
 
         return PaginationUtils.paginate(page, size, userResFlux);
     }
@@ -222,16 +234,16 @@ public class AppUserServiceImpl implements AppUserService {
                     localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.avatarUrl(), appUser.getAvatarUrl(), appUser::setAvatarUrl);
                     localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.getTimezone(), appUser::setTimezone);
 
-//                    // Enum fields
-//                    localNeedsUpdate |= setIfChangedAllowNull(
-//                            updateUserProfileRequest.profileVisibility(),
-//                            appUser.getProfileVisibility(),
-//                            appUser::setProfileVisibility);
-//
-//                    localNeedsUpdate |= setIfChangedAllowNull(
-//                            updateUserProfileRequest.supportRole(),
-//                            appUser.getSupportRole(),
-//                            appUser::setSupportRole);
+                    // Enum fields
+                    localNeedsUpdate |= setIfChangedAllowNull(
+                            updateUserProfileRequest.profileVisibility(),
+                            appUser.getProfileVisibility(),
+                            appUser::setProfileVisibility);
+
+                    localNeedsUpdate |= setIfChangedAllowNull(
+                            updateUserProfileRequest.supportRole(),
+                            appUser.getSupportRole(),
+                            appUser::setSupportRole);
 
                     // Notification preferences (JSON-backed object)
                     localNeedsUpdate |= setIfChangedAllowNull(
@@ -242,7 +254,7 @@ public class AppUserServiceImpl implements AppUserService {
                     // --- Persist only if any changes ---
                     return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);
                 })
-                .map(this::mapToUserResponse);
+                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, userId));
     }
     /**
      * Deletes the local R2DBC profile for a given Keycloak ID.
@@ -254,29 +266,6 @@ public class AppUserServiceImpl implements AppUserService {
                 .flatMap(appUserRepository::delete)
                 .then();
     }
-    /**
-     * Utility method to set the 'isSelf' flag on the user object.
-     */
-    private AppUser setSelfFlagIfCurrentUser(AppUser appUser, String currentUserId){
-        if(appUser.getKeycloakId().toString().equals(currentUserId)){
-            appUser.setSelf(true);
-        }
-        return appUser;
-    };
-
-    private UserResponse mapToUserResponse(AppUser appUser){
-        return new UserResponse(
-                appUser.getKeycloakId(),
-                appUser.getEmail(),
-                appUser.getUsername(),
-                appUser.getFirstName(),
-                appUser.getLastName(),
-                appUser.getBio(),
-                appUser.getDateJoined(),
-                appUser.isSelf()
-        );
-    }
-
     /**
      * Generates the default bio-based on the user's first and last name.
      */

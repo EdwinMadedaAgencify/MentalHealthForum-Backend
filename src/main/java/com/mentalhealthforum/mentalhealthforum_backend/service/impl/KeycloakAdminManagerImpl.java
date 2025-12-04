@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
 import jakarta.annotation.PostConstruct;
@@ -177,7 +177,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
             return getUsersResource().get(userId)
                     .groups()
                     .stream()
-                    .map(GroupRepresentation::getName)
+                    .map(GroupRepresentation::getPath)
                     .toList();
 
         } catch (Exception e){
@@ -187,7 +187,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     }
 
     @Override
-    public void assignUserRole(String userId, ForumRole role) {
+    public void assignUserRole(String userId, RealmRole role) {
         try {
             UserResource userResource = getUsersResource().get(userId);
             var roleRep = getRealmResource().roles().get(role.getRoleName()).toRepresentation();

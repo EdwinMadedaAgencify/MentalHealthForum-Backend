@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
@@ -25,7 +25,7 @@ import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.
 public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
-    private static final ForumRole DEFAULT_FORUM_ROLE = ForumRole.FORUM_MEMBER;
+    private static final RealmRole DEFAULT_FORUM_ROLE = RealmRole.FORUM_MEMBER;
 
     private final KeycloakAdminManager adminManager;
 

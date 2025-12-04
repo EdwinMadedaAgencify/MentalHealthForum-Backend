@@ -1,6 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.enums.ForumRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -41,7 +41,7 @@ public interface KeycloakAdminManager {
 
     // --- Credential and Role Helpers ---
 
-    void assignUserRole(String userId, ForumRole role);
+    void assignUserRole(String userId, RealmRole role);
 
     List<String> getUserRealmRoles(String userId);
 

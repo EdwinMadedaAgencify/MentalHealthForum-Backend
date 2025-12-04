@@ -61,7 +61,7 @@ public class UserController {
 
                     // 6. Build the Location header URI for the newly created resource
                     URI location = UriComponentsBuilder.fromUri(currentUri)
-                            .path("/{id}") // Appends "/{id}"
+                            .path("/{userId}") // Appends "/{userId}"
                             .buildAndExpand(userId) // Inserts the newly generated userId
                             .toUri(); // Finalizes the URI object
 
@@ -115,7 +115,6 @@ public class UserController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String userId,
             @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) {
-
         final String currentUserId = jwt.getSubject();
 
         // Check if the logged-in user is updating their own profile

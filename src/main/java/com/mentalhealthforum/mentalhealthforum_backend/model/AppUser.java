@@ -1,6 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.model;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
@@ -11,7 +13,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
-import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -101,10 +102,10 @@ public class AppUser {
     private String language = "en";
 
     @Column("profile_visibility")
-    private ProfileVisibility profileVisibility = ProfileVisibility.PRIVATE;
+    private ProfileVisibility profileVisibility = ProfileVisibility.MEMBERS_ONLY;
 
     @Column("support_role")
-    private SupportRole supportRole = SupportRole.SEEKING_SUPPORT;
+    private SupportRole supportRole = SupportRole.NOT_SPECIFIED;
 
     @Column("notification_preferences")
     private String notificationPreferencesJson;
@@ -157,12 +158,33 @@ public class AppUser {
             String firstName,
             String lastName
     ) {
-        this();
-        this.keycloakId = UUID.fromString(keycloakStringId); // Direct conversion here
+        this(); // Call default constructor to set defaults
+        this.keycloakId = UUID.fromString(keycloakStringId);
         this.email = email;
         this.username = username;
         this.firstName = firstName;
         this.lastName = lastName;
+    }
+
+    public String getDisplayName(){
+        if (this.displayName != null && !this.displayName.trim().isEmpty()) {
+            return this.displayName;
+        }
+
+        if (this.firstName != null && this.lastName != null &&
+                !this.firstName.trim().isEmpty() && !this.lastName.trim().isEmpty()) {
+            return (firstName.charAt(0) + "" + lastName.charAt(0)).toUpperCase();
+        }
+
+        if (this.firstName != null && !this.firstName.trim().isEmpty()) {
+            return String.valueOf(firstName.charAt(0)).toUpperCase();
+        }
+
+        if (this.username != null && !this.username.trim().isEmpty()) {
+            return String.valueOf(username.charAt(0)).toUpperCase();
+        }
+
+        return "Anonymous";
     }
 
     // --- NotificationPreferences JSON helpers ---
@@ -176,4 +198,63 @@ public class AppUser {
     public void setNotificationPreferences(NotificationPreferences prefs){
         this.notificationPreferencesJson = JsonUtils.toJson(prefs);
     }
+
+
+
+    // --- Custom computed property getters --
+    public boolean isAdmin(){
+        return hasRole(RealmRole.ADMIN) || isInGroup(GroupPath.ADMINISTRATORS);
+    }
+
+    public boolean isModerator(){
+        return hasRole(RealmRole.MODERATOR) || isInGroup(GroupPath.MODERATORS);
+    }
+
+    public boolean isPeerSupporter(){
+        return hasRole(RealmRole.PEER_SUPPORTER) ||
+                isInGroup(GroupPath.MEMBERS_TRUSTED) ||
+                isInGroup(GroupPath.MODERATORS_PROFESSIONAL);
+    }
+
+    public boolean isTrustedMember(){
+        return hasRole(RealmRole.TRUSTED_MEMBER) ||
+                isInGroup(GroupPath.MEMBERS_ACTIVE) ||
+                isInGroup(GroupPath.MEMBERS_TRUSTED);
+    }
+
+    public boolean isForumMember(){
+        return hasRole(RealmRole.FORUM_MEMBER) || (groups != null && !groups.isEmpty());
+    }
+
+    // -- Helper Methods ---
+    public boolean hasRole(RealmRole role){
+        return roles != null && roles.contains(role.getRoleName());
+    }
+
+    public boolean isInGroup(GroupPath group){
+        if(groups == null || group == null) return false;
+        return groups.stream().anyMatch(groupItem -> GroupPath.isInGroup(groupItem, group));
+    }
+
+    // Check if user has any of the specified roles
+    public boolean hasAnyRole(RealmRole... rolesToCheck){
+        if(roles == null || roles.isEmpty()) return false;
+        for(RealmRole role: rolesToCheck){
+            if(roles.contains(role.getRoleName())){
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isInAnyGroup(GroupPath ...groupsToCheck){
+        if(groups == null || groups.isEmpty()) return false;
+        for(GroupPath group: groupsToCheck){
+            if(isInGroup(group)){
+                return true;
+            }
+        }
+        return false;
+    }
+
 }

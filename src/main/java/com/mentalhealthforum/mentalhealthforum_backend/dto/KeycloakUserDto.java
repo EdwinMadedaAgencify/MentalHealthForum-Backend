@@ -3,8 +3,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Set;
 
 /**
  * DTO representing the essential authoritative user data extracted from the
@@ -13,7 +11,7 @@ import java.util.Set;
  */
 public record KeycloakUserDto(
         // Primary key used by the application
-        String id,
+        String userId,
 
         // Basic Profile Information
         String username,

@@ -1,22 +1,25 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto;
 
-import jakarta.validation.constraints.NotNull;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * The official DTO returned to clients for displaying user profile information.
- * It calculates the full name and excludes sensitive Keycloak fields, providing
- * a clean contract with the frontend.
+ * Now includes comprehensive profile data for rich user interfaces.
  */
 @Setter
 @Getter
 public class UserResponse {
 
-    private UUID userId;  // The Keycloak ID
+    // -- Core Identity ---
+    private UUID userId; // The Keycloak ID
     private String email;
     private String username;
     private String firstName;
@@ -25,22 +28,57 @@ public class UserResponse {
     private Instant dateJoined;
     private boolean isSelf;
 
+    // --- Enhanced Profile Data ---
+    private String displayName;
+    private String avatarUrl;
+    private String timezone;
+    private String language;
+    private ProfileVisibility profileVisibility;
+    private SupportRole supportRole;
+
+    // --- Engagement Metrics ---
+    private Integer postsCount;
+    private Double reputationScore;
+    private Instant lastActiveAt;
+    private Instant lastPostedAt;
+    private Boolean isActive;
+
+    // --- Cached Keycloak Data (UI Context) ---
+    private Set<String> roles;
+    private Set<String> groups;
+
+    // --- User Preferences ---
+    private NotificationPreferences notificationPreferences;
+
+    // PROFILE CONSTRUCTOR (Privacy-Respecting) ===
     public UserResponse(
             UUID userId,
-            String email,
-            String username,
-            String firstName,
-            String lastName,
-            String bio,
             Instant dateJoined,
-            boolean isSelf) {
+            boolean isSelf,
+            String displayName,
+            Integer postsCount,
+            Double reputationScore,
+            Instant lastActiveAt,
+            Instant lastPostedAt,
+            Boolean isActive,
+            Set<String> roles,
+            Set<String> groups
+            ) {
         this.userId = userId;
-        this.email = email;
-        this.username = username;
-        this.firstName = firstName;
-        this.lastName = lastName;
-        this.bio = bio;
         this.dateJoined = dateJoined;
         this.isSelf = isSelf;
+        this.displayName = displayName;
+        this.postsCount = postsCount;
+        this.reputationScore = reputationScore;
+        this.lastActiveAt = lastActiveAt;
+        this.lastPostedAt = lastPostedAt;
+        this.isActive = isActive;
+        this.roles = roles != null ? Set.copyOf(roles) : Set.of();
+        this.groups = groups != null ? Set.copyOf(groups) : Set.of();
+
+        // NO NULL SETTING HERE - fields remain uninitialized (null by default)
+        // Privacy enforcement happens in the mapper, not here
     }
+
+
 }
