@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.config;
 
+import org.jetbrains.annotations.NotNull;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -34,7 +35,7 @@ public class JwtAuthConverter implements Converter<Jwt, Mono<AbstractAuthenticat
      * The roles extraction is a synchronous operation, so it's wrapped in a Mono.
      */
     @Override
-    public Mono<AbstractAuthenticationToken> convert(Jwt jwt) {
+    public Mono<AbstractAuthenticationToken> convert(@NotNull Jwt jwt) {
         return Mono.just(extractAuthenticationToken(jwt));
     }
 

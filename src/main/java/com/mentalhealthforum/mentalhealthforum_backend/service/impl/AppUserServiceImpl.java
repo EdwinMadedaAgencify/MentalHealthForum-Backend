@@ -2,9 +2,10 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.KeycloakSyncException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
-import com.mentalhealthforum.mentalhealthforum_backend.mapper.UserResponseMapper;
+import com.mentalhealthforum.mentalhealthforum_backend.service.UserResponseMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
@@ -19,14 +20,30 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.*;
 
+
 /**
- * Handles part of the user-related business logic, including profile synchronization
- * with Keycloak and data augmentation (like setting the 'isSelf' flag).
+ * Implementation of {@link AppUserService} handling user profile business logic.
+ * Manages synchronization between Keycloak (identity provider) and local R2DBC database,
+ * enforces privacy rules based on profile visibility and viewer privileges,
+ * and handles context-aware user profile mapping.
+ *
+ * <p>Key responsibilities:
+ * <ul>
+ *   <li>Synchronize user data from Keycloak to local database</li>
+ *   <li>Apply privacy rules for user profile visibility</li>
+ *   <li>Enforce authorization for profile updates and deletions</li>
+ *   <li>Provide paginated user listings with context-aware data</li>
+ * </ul>
+ *
+ * @see AppUserService
+ * @see UserResponseMapper
  */
 @Service
 public class AppUserServiceImpl implements AppUserService {
@@ -55,10 +72,16 @@ public class AppUserServiceImpl implements AppUserService {
     }
 
     /**
-     * Creates the initial R2DBC profile immediately after Keycloak registration.
-     * This is the backend's orchestration point for new users.
+     * Creates or updates the R2DBC user profile by synchronizing data from Keycloak.
+     * Fetches current roles and groups from Keycloak admin API and applies incremental updates.
+     * Used for user registration and profile synchronization.
+     *
+     * @param keycloakUserDto Keycloak user data including identity fields
+     * @param viewerContext Viewer context for privacy-aware response mapping, may be null for registration
+     * @return Mono of user response with privacy rules applied
      */
-    public Mono<UserResponse> syncUserViaAdminClient(KeycloakUserDto keycloakUserDto){
+    @Override
+    public Mono<UserResponse> syncUserViaAdminClient(KeycloakUserDto keycloakUserDto, ViewerContext viewerContext){
         AppUser userDetails = new AppUser(
                 keycloakUserDto.userId(),
                 keycloakUserDto.email(),
@@ -95,27 +118,27 @@ public class AppUserServiceImpl implements AppUserService {
                     localNeedsUpdate |= setIfChanged(userDetails.getRoles(), existingUser.getRoles(), existingUser::setRoles);
                     localNeedsUpdate |= setIfChanged(userDetails.getGroups(), existingUser.getGroups(), existingUser::setGroups);
 
-                    // R2DBC performs an UPDATE here.
+                    // Save only if changes were detected to optimize database operations
                     return localNeedsUpdate ? appUserRepository.save(existingUser) : Mono.just(existingUser);
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    //  User does NOT exist: Insert the new user
+                    // User not found in local database - create new profile with default bio
                     // R2DBC performs an INSERT here.
                     userDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
                     return appUserRepository.save(userDetails);
                 }))
-                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, keycloakUserDto.userId()));
+                .map(appUser ->  userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**
-     * @deprecated replaced by {@link #syncUserViaAdminClient(KeycloakUserDto)}
+     * @deprecated replaced by {@link #syncUserViaAdminClient(KeycloakUserDto, ViewerContext)}
      * due to limitations in token-based synchronization. The userinfo endpoint lacks critical
      * metadata (createdTimestamp, enabled status) and is restricted to current user only.
      *
      * <p>For user synchronization, use:
      * <ul>
-     *   <li>{@link #syncUserViaAdminClient(KeycloakUserDto)} - Complete user data sync</li>
-     *   <li>{@link #getAppUserWithSelfFlag(String, String)} - User profile retrieval</li>
-     *   <li>{@link #updateLocalProfile(String, UpdateUserProfileRequest)} - Profile updates</li>
+     *   <li>{@link #syncUserViaAdminClient(KeycloakUserDto, ViewerContext)} - Complete user data sync</li>
+     *   <li>{@link #getAppUserWithContext(String, ViewerContext)} (String, String)} - User profile retrieval</li>
+     *   <li>{@link #updateLocalProfile(String, ViewerContext, UpdateUserProfileRequest)} - Profile updates</li>
      * </ul>
      *
      * @param accessToken The JWT access token (user-specific)
@@ -184,90 +207,153 @@ public class AppUserServiceImpl implements AppUserService {
 
     }
     /**
-     * Fetches a single user profile from the local database, or throws if not found.
-     * Sets 'self' flag if the current user matches the one being requested.
+     * Fetches a single user profile with privacy rules applied.
+     * Returns different data based on whether viewer is viewing their own profile,
+     * the target user's profile visibility, and the viewer's privileges.
      *
-     * @param userId The Keycloak ID of the profile to fetch.
-     * @param currentUserId The Keycloak ID of the authenticated user.
+     * @param userId Keycloak ID of the profile to fetch
+     * @param viewerContext Authenticated viewer's context for privacy/self-determination
+     * @return Mono of user response with appropriate privacy rules applied
+     * @throws UserDoesNotExistException if no user found with given ID
      */
-    public Mono<UserResponse> getAppUserWithSelfFlag(String userId, String currentUserId) {
+    @Override
+    public Mono<UserResponse> getAppUserWithContext(String userId, ViewerContext viewerContext) {
         return appUserRepository.findAppUserByKeycloakId(userId)
                 .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
-                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, currentUserId));
+                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**
-     * Fetches all users, applies the 'isSelf' flag, and paginates the result.
-     * @param currentUserId The Keycloak ID of the authenticated user.
-     * @param page The requested page number (0-indexed).
-     * @param size The number of items per page.
-     * @return Mono<PaginatedResponse<AppUser>> A paginated structure containing the users.
+     * Fetches paginated list of all users with privacy rules applied for each.
+     * Applies individual privacy rules per user based on their profile visibility
+     * and the viewer's privileges.
+     *
+     * @param viewerContext Authenticated viewer's context for privacy rules
+     * @param page Zero-indexed page number
+     * @param size Number of items per page
+     * @return Mono of paginated user responses with privacy rules applied
      */
-    public Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithSelfFlag(String currentUserId, int page, int size){
-        // Fetch all users and set the 'self' flag on the current user
-        Flux<AppUser> appUserFlux = appUserRepository.findAll();
+        @Override
+        public Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(ViewerContext viewerContext, int page, int size){
 
-        // Apply the self flag before passing the Flux to the pagination utility
-        Flux<UserResponse> userResFlux = appUserFlux.map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, currentUserId));
+            String currentUserId = viewerContext != null? viewerContext.getUserId(): null;
+            // Create a safe, deterministic comparator
+            Comparator<AppUser> comparator = createUserComparator(currentUserId);
 
-        return PaginationUtils.paginate(page, size, userResFlux);
-    }
+            Flux<AppUser> userResponseFlux =  appUserRepository.findAll()
+                    .collectList()
+                    .flatMapMany(appUsers -> {
+                        // Sort with Java logic (current user first, then by display name)
+                        List<AppUser> sortedUsers = appUsers.stream()
+                                .sorted(comparator)
+                                .collect(Collectors.toList());
+                        return Flux.fromIterable(sortedUsers);
+                    });
+
+            // Apply the self flag before passing the Flux to the pagination utility
+            Flux<UserResponse> userResFlux = userResponseFlux.map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
+
+            return PaginationUtils.paginate(page, size, userResFlux);
+        }
+
+        private Comparator<AppUser> createUserComparator(String currentUserId){
+            return Comparator
+                    // Current user first (false < true)
+                    .comparing((AppUser appUser) -> !appUser.getKeycloakId().toString().equals(currentUserId))
+                    // Then by displayName safely, nulls last, case-insensitive
+                    .thenComparing(
+                            Comparator.comparing(
+                                    AppUser::getDisplayName,
+                                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)
+                            )
+                    )
+                    // Tiebreaker: To ensure deterministic order
+                    .thenComparing(AppUser::getDateJoined);
+        }
     /**
-     * Updates locally managed profile fields (e.g., bio).
-     * @param userId The Keycloak ID of the user to update.
-     * @param updateUserProfileRequest DTO containing the fields to update.
+     * Updates locally managed profile fields for the authenticated user.
+     * Only allows users to update their own profiles (authorization enforced).
+     * Keycloak-authoritative fields (email, first/last name) are synchronized from Keycloak.
+     *
+     * @param userId Keycloak ID of the user to update
+     * @param viewerContext Authenticated viewer's context for authorization
+     * @param updateUserProfileRequest DTO containing fields to update
+     * @return Mono of updated user response
+     * @throws UserDoesNotExistException if no user found with given ID
+     * @throws InsufficientPermissionException if viewer is not updating their own profile
      */
-    public Mono<UserResponse> updateLocalProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest){
+    @Override
+    public Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserProfileRequest updateUserProfileRequest){
         return appUserRepository.findAppUserByKeycloakId(userId)
                 .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
                 .flatMap(appUser -> {
-
                     boolean localNeedsUpdate = false;
 
-                    // --- Keycloak-authoritative fields ---
-                    localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.email(), appUser.getEmail(), appUser::setEmail);
-                    localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.firstName(), appUser.getFirstName(), appUser::setFirstName);
-                    localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.lastName(), appUser.getLastName(), appUser::setLastName);
+                    // Check if the user is updating their own profile
+                    if (viewerContext == null || !viewerContext.getUserId().equals(userId)) {
+                        return Mono.error(new InsufficientPermissionException("Forbidden: Cannot update another user's profile."));
+                    }
 
-                    // --- User-controlled fields (allow null/blank to clear) --
-                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.displayName(), appUser.getDisplayName(), appUser::setDisplayName);
-                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.bio(), appUser.getBio(), appUser::setBio);
-                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.avatarUrl(), appUser.getAvatarUrl(), appUser::setAvatarUrl);
-                    localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.getTimezone(), appUser::setTimezone);
+                        // --- Keycloak-authoritative fields ---
+                        localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.email(), appUser.getEmail(), appUser::setEmail);
+                        localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.firstName(), appUser.getFirstName(), appUser::setFirstName);
+                        localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.lastName(), appUser.getLastName(), appUser::setLastName);
 
-                    // Enum fields
-                    localNeedsUpdate |= setIfChangedAllowNull(
-                            updateUserProfileRequest.profileVisibility(),
-                            appUser.getProfileVisibility(),
-                            appUser::setProfileVisibility);
+                        // --- User-controlled fields (allow null/blank to clear) --
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.displayName(), appUser.getDisplayName(), appUser::setDisplayName);
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.bio(), appUser.getBio(), appUser::setBio);
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.avatarUrl(), appUser.getAvatarUrl(), appUser::setAvatarUrl);
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.getTimezone(), appUser::setTimezone);
 
-                    localNeedsUpdate |= setIfChangedAllowNull(
-                            updateUserProfileRequest.supportRole(),
-                            appUser.getSupportRole(),
-                            appUser::setSupportRole);
+                        // Enum fields
+                        localNeedsUpdate |= setIfChangedAllowNull(
+                                updateUserProfileRequest.profileVisibility(),
+                                appUser.getProfileVisibility(),
+                                appUser::setProfileVisibility);
 
-                    // Notification preferences (JSON-backed object)
-                    localNeedsUpdate |= setIfChangedAllowNull(
-                            updateUserProfileRequest.notificationPreferences(),
-                            appUser.getNotificationPreferences(),
-                            appUser::setNotificationPreferences);
+                        localNeedsUpdate |= setIfChangedAllowNull(
+                                updateUserProfileRequest.supportRole(),
+                                appUser.getSupportRole(),
+                                appUser::setSupportRole);
+
+                        // Notification preferences (JSON-backed object)
+                        localNeedsUpdate |= setIfChangedAllowNull(
+                                updateUserProfileRequest.notificationPreferences(),
+                                appUser.getNotificationPreferences(),
+                                appUser::setNotificationPreferences);
 
                     // --- Persist only if any changes ---
                     return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);
                 })
-                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, userId));
+                .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**
-     * Deletes the local R2DBC profile for a given Keycloak ID.
-     * @param keycloakId The Keycloak ID of the user whose profile is to be deleted.
+     * Deletes the local R2DBC profile for the authenticated user.
+     * Only allows users to delete their own profiles (authorization enforced).
+     * Does not affect Keycloak user account.
+     *
+     * @param userId Keycloak ID of the user whose profile is to be deleted
+     * @param viewerContext Authenticated viewer's context for authorization
+     * @return Mono signaling completion
+     * @throws InsufficientPermissionException if viewer is not deleting their own profile
      */
-    public Mono<Void> deleteLocalProfile(String keycloakId){
+    @Override
+    public Mono<Void> deleteLocalProfile(String userId, ViewerContext viewerContext){
+        // --- Authorization check ---
+        if(viewerContext == null || !viewerContext.getUserId().equals(userId)){
+            return Mono.error(new InsufficientPermissionException("Forbidden: Cannot delete another user's profile."));
+        }
         return appUserRepository
-                .findAppUserByKeycloakId(keycloakId)
+                .findAppUserByKeycloakId(userId)
                 .flatMap(appUserRepository::delete)
                 .then();
     }
     /**
-     * Generates the default bio-based on the user's first and last name.
+     * Generates a welcoming default bio for new users based on their name.
+     * Used when creating initial user profiles during registration.
+     *
+     * @param firstName User's first name (maybe null)
+     * @param lastName User's last name (maybe null)
+     * @return Personalized welcome message or generic welcome if name not available
      */
     private String generateDefaultBio(String firstName, String lastName) {
         if (firstName != null && lastName != null) {

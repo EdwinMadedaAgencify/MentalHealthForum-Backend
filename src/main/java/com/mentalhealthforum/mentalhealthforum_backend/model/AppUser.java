@@ -1,10 +1,12 @@
 package com.mentalhealthforum.mentalhealthforum_backend.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
+import com.mentalhealthforum.mentalhealthforum_backend.service.PrivilegedUser;
+//import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
@@ -36,7 +38,7 @@ import java.util.UUID;
 @Setter
 @Getter
 @Table("app_users")
-public class AppUser {
+public class AppUser implements PrivilegedUser {
 
     @Id
     @Column("id")
@@ -108,7 +110,7 @@ public class AppUser {
     private SupportRole supportRole = SupportRole.NOT_SPECIFIED;
 
     @Column("notification_preferences")
-    private String notificationPreferencesJson;
+    private JsonNode notificationPreferencesJson;
 
     @Column("posts_count")
     @Min(0)
@@ -159,6 +161,9 @@ public class AppUser {
             String lastName
     ) {
         this(); // Call default constructor to set defaults
+        if(keycloakStringId == null || keycloakStringId.trim().isEmpty()){
+            throw new IllegalArgumentException("keycloakStringId cannot be null or empty");
+        }
         this.keycloakId = UUID.fromString(keycloakStringId);
         this.email = email;
         this.username = username;
@@ -187,74 +192,17 @@ public class AppUser {
         return "Anonymous";
     }
 
-    // --- NotificationPreferences JSON helpers ---
+    // --- NotificationPreferences getter/setter using JsonUtils ---
     public NotificationPreferences getNotificationPreferences() {
         if(notificationPreferencesJson == null || notificationPreferencesJson.isEmpty()){
             return new NotificationPreferences();
         }
-        return JsonUtils.fromJson(notificationPreferencesJson, NotificationPreferences.class);
+        return JsonUtils.jsonNodeToObject(notificationPreferencesJson, NotificationPreferences.class);
     }
 
     public void setNotificationPreferences(NotificationPreferences prefs){
-        this.notificationPreferencesJson = JsonUtils.toJson(prefs);
+        this.notificationPreferencesJson = JsonUtils.objectToJsonNode(
+                prefs == null ? new NotificationPreferences() : prefs
+        );
     }
-
-
-
-    // --- Custom computed property getters --
-    public boolean isAdmin(){
-        return hasRole(RealmRole.ADMIN) || isInGroup(GroupPath.ADMINISTRATORS);
-    }
-
-    public boolean isModerator(){
-        return hasRole(RealmRole.MODERATOR) || isInGroup(GroupPath.MODERATORS);
-    }
-
-    public boolean isPeerSupporter(){
-        return hasRole(RealmRole.PEER_SUPPORTER) ||
-                isInGroup(GroupPath.MEMBERS_TRUSTED) ||
-                isInGroup(GroupPath.MODERATORS_PROFESSIONAL);
-    }
-
-    public boolean isTrustedMember(){
-        return hasRole(RealmRole.TRUSTED_MEMBER) ||
-                isInGroup(GroupPath.MEMBERS_ACTIVE) ||
-                isInGroup(GroupPath.MEMBERS_TRUSTED);
-    }
-
-    public boolean isForumMember(){
-        return hasRole(RealmRole.FORUM_MEMBER) || (groups != null && !groups.isEmpty());
-    }
-
-    // -- Helper Methods ---
-    public boolean hasRole(RealmRole role){
-        return roles != null && roles.contains(role.getRoleName());
-    }
-
-    public boolean isInGroup(GroupPath group){
-        if(groups == null || group == null) return false;
-        return groups.stream().anyMatch(groupItem -> GroupPath.isInGroup(groupItem, group));
-    }
-
-    // Check if user has any of the specified roles
-    public boolean hasAnyRole(RealmRole... rolesToCheck){
-        if(roles == null || roles.isEmpty()) return false;
-        for(RealmRole role: rolesToCheck){
-            if(roles.contains(role.getRoleName())){
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public boolean isInAnyGroup(GroupPath ...groupsToCheck){
-        if(groups == null || groups.isEmpty()) return false;
-        for(GroupPath group: groupsToCheck){
-            if(isInGroup(group)){
-                return true;
-            }
-        }
-        return false;
-    }
-
 }

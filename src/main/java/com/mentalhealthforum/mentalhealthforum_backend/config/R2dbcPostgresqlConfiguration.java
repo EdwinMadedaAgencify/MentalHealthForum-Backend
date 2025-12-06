@@ -1,9 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.config;
 
-import com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters.ProfileVisibilityReadingConverter;
-import com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters.ProfileVisibilityWritingConverter;
-import com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters.SupportRoleReadingConverter;
-import com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters.SupportRoleWritingConverter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
@@ -11,6 +9,7 @@ import io.r2dbc.postgresql.PostgresqlConnectionFactory;
 import io.r2dbc.postgresql.codec.EnumCodec;
 import io.r2dbc.spi.ConnectionFactory;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.r2dbc.config.AbstractR2dbcConfiguration;
@@ -18,6 +17,8 @@ import org.springframework.data.r2dbc.convert.R2dbcCustomConversions;
 import org.springframework.data.r2dbc.dialect.PostgresDialect;
 import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
 
+
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -30,9 +31,11 @@ import java.util.List;
 public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
 
     private final R2dbcProperties properties;
+    private final ObjectMapper objectMapper;
 
-    public R2dbcPostgresqlConfiguration(R2dbcProperties properties) {
+    public R2dbcPostgresqlConfiguration(R2dbcProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -78,6 +81,16 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
     @Bean
     @Override
     public R2dbcCustomConversions r2dbcCustomConversions(){
-        return R2dbcCustomConversions.of(PostgresDialect.INSTANCE, getCustomConverters());
+        List<Converter<?, ?>> converters = new ArrayList<>();
+        // Directly add all the custom converters
+        converters.add(new ProfileVisibilityWritingConverter());
+        converters.add(new ProfileVisibilityReadingConverter());
+        converters.add(new SupportRoleWritingConverter());
+        converters.add(new SupportRoleReadingConverter());
+
+        // Add JSONB converters
+        converters.add(new JsonNodeToJsonWriteConverter(objectMapper));
+        converters.add(new JsonToJsonNodeReadConverter(objectMapper));
+        return R2dbcCustomConversions.of(PostgresDialect.INSTANCE, converters);
     }
 }
