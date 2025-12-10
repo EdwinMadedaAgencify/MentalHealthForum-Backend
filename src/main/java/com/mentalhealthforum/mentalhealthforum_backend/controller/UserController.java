@@ -7,6 +7,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.impl.AppUserServiceImpl;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,10 @@ import org.springframework.web.util.UriComponentsBuilder; // Use standard UriCom
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
@@ -96,12 +101,26 @@ public class UserController {
     public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<UserResponse>>>> getAllUsers(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size){
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "true", name = "current_user_first") @Parameter(name = "current_user_first") boolean currentUserFirst,
+            @RequestParam(required = false, name = "is_active") @Parameter(name = "is_active") Boolean isActive,
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) String[] groups,
+            @RequestParam(defaultValue = "display_name", name = "sort_by")
+            @Parameter(name = "sort_by", description = "Field to sort by: display_name, date_joined, posts_count, reputation_score, last_posted_at, last_active_at")
+            String sortBy,
+            @RequestParam(required = false, name = "sort_direction")
+            @Parameter(name = "sort_direction", description = "Sort direction: asc or desc")
+            String sortDirection,
+            @RequestParam(required = false, name = "search")
+            @Parameter(name = "search", description = "Search display_name (case-insensitive contains)")
+            String search
+    ){
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
         // userService.getAllUsers returns Mono<PaginatedResponse<UserRepresentation>>
-        return appUserService.getAllAppUsersWithContext(viewerContext, page, size)
+        return appUserService.getAllAppUsersWithContext(viewerContext, page, size, currentUserFirst, isActive, role, groups, sortBy, sortDirection, search)
                 .map(paginatedUsers -> {
                     String message = "Paginated user records retrieved successfully.";
                     StandardSuccessResponse<PaginatedResponse<UserResponse>> response = new StandardSuccessResponse<>(message, paginatedUsers);

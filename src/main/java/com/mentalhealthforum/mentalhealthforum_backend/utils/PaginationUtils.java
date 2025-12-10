@@ -21,7 +21,6 @@ public class PaginationUtils {
      * @param <T> The type of data in the Flux.
      * @return Mono<PaginatedResponse<T>> The paginated response containing the data and metadata.
      */
-
     public static <T>Mono<PaginatedResponse<T>> paginate(int page, int size, Flux<T> dataFlux){
         if (page < 0 || size <= 0) {
 

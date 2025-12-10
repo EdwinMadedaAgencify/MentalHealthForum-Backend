@@ -10,7 +10,6 @@ import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
-import com.mentalhealthforum.mentalhealthforum_backend.utils.PaginationUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
@@ -20,9 +19,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.*;
@@ -88,6 +87,9 @@ public class AppUserServiceImpl implements AppUserService {
                 keycloakUserDto.username(),
                 keycloakUserDto.firstName(),
                 keycloakUserDto.lastName());
+
+        // Set display name
+        userDetails.setDisplayName(userDetails.getDisplayName());
 
         // Set fields that are only relevant on INSERT
         userDetails.setIsEnabled(keycloakUserDto.enabled());
@@ -227,55 +229,95 @@ public class AppUserServiceImpl implements AppUserService {
      * Applies individual privacy rules per user based on their profile visibility
      * and the viewer's privileges.
      *
-     * @param viewerContext Authenticated viewer's context for privacy rules
-     * @param page Zero-indexed page number
-     * @param size Number of items per page
+     * @param viewerContext    Authenticated viewer context used to determine field visibility
+     * @param page             Zero-indexed page number to retrieve
+     * @param size             Number of users to return per page
+     * @param currentUserFirst Whether to place the current user first on page 0
+     * @param isActive         Optional filter restricting results by active/inactive status
+     * @param role             Optional role filter; null means no role restriction
+     * @param groups           Optional group filter; empty array is treated as no filter
+     * @param sortBy           Field to sort by; falls back to a safe default when invalid
+     * @param sortDirection    Sort direction ("asc" or "desc"); defaults by field when null
+     * @param search           Optional search query; blank values ignored
      * @return Mono of paginated user responses with privacy rules applied
      */
-        @Override
-        public Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(ViewerContext viewerContext, int page, int size){
+    @Override
+    public Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(
+            ViewerContext viewerContext,
+            int page,
+            int size,
+            boolean currentUserFirst,
+            Boolean isActive,
+            String role,
+            String[] groups,
+            String sortBy,
+            String sortDirection,
+            String search){
 
-            String currentUserId = viewerContext != null? viewerContext.getUserId(): null;
-            // Create a safe, deterministic comparator
-            Comparator<AppUser> comparator = createUserComparator(currentUserId);
+        String currentUserId = viewerContext != null? viewerContext.getUserId() : null;
 
-            Flux<AppUser> userResponseFlux =  appUserRepository.findAll()
-                    .collectList()
-                    .flatMapMany(appUsers -> {
-                        // Sort with Java logic (current user first, then by display name)
-                        List<AppUser> sortedUsers = appUsers.stream()
-                                .sorted(comparator)
-                                .collect(Collectors.toList());
-                        return Flux.fromIterable(sortedUsers);
-                    });
+        int offset = page * size;
 
-            // Apply the self flag before passing the Flux to the pagination utility
-            Flux<UserResponse> userResFlux = userResponseFlux.map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
+        // Convert empty array to null
+        String[] effectiveGroups = (groups == null || groups.length == 0) ? null : groups;
 
-            return PaginationUtils.paginate(page, size, userResFlux);
+        // Convert empty search to null
+        String effectiveSearch = (search == null || search.trim().isEmpty()) ? null: search.trim();
+
+        String normalizedSortBy = validateAndNormalizeSortBy(sortBy);
+        String normalizedDirection = determineSortDirection(sortDirection, normalizedSortBy);
+
+        // Only apply current user first on page 0
+        boolean applyCurrentUserFirst = currentUserFirst && page == 0;
+
+        Flux<AppUser> appUsersFlux = appUserRepository.findAllPaginated(
+                isActive, role, effectiveGroups,currentUserId, applyCurrentUserFirst, normalizedSortBy, normalizedDirection, effectiveSearch, size, offset
+        );
+
+        Mono<Long> totalCount = appUserRepository.countAll(isActive, role, effectiveGroups);
+
+        return Mono.zip(appUsersFlux.collectList(), totalCount)
+                .map(tuple -> {
+                    List<AppUser> appUsers = tuple.getT1();
+                    long total = tuple.getT2();
+
+                    List<UserResponse> content = appUsers.stream()
+                            .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext))
+                            .collect(Collectors.toList());
+
+                    int totalPages = total == 0? 0: (int) Math.ceil((double) total/size);
+                    boolean isLastPage = page >= totalPages - 1;
+
+                    return new PaginatedResponse<>(content, page, size, total, totalPages, isLastPage);
+                });
+    }
+
+    private String validateAndNormalizeSortBy(String sortBy){
+        // Allowed sort fields
+        Set<String> allowedFields = Set.of("display_name","date_joined", "posts_count", "reputation_score", "last_posted_at", "last_active_at");
+        if(!allowedFields.contains(sortBy)){
+            return "display_name"; // Default to alphabetical
         }
+        return sortBy;
+    }
 
-        private Comparator<AppUser> createUserComparator(String currentUserId){
-            return Comparator
-                    // Current user first (false < true)
-                    .comparing((AppUser appUser) -> !appUser.getKeycloakId().toString().equals(currentUserId))
-                    // Then by displayName safely, nulls last, case-insensitive
-                    .thenComparing(
-                            Comparator.comparing(
-                                    AppUser::getDisplayName,
-                                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)
-                            )
-                    )
-                    // Tiebreaker: To ensure deterministic order
-                    .thenComparing(AppUser::getDateJoined);
+    private String determineSortDirection(String sortDirection, String sortBy){
+        if(sortDirection != null){
+            return "desc".equalsIgnoreCase(sortDirection)? "DESC": "ASC";
         }
+        // Natural defaults based on field
+        return switch (sortBy) {
+            case "date_joined", "posts_count", "reputation_score", "last_posted_at", "last_active_at" -> "DESC";
+            default -> "ASC"; // display_name
+        };
+    }
     /**
      * Updates locally managed profile fields for the authenticated user.
      * Only allows users to update their own profiles (authorization enforced).
      * Keycloak-authoritative fields (email, first/last name) are synchronized from Keycloak.
      *
      * @param userId Keycloak ID of the user to update
-     * @param viewerContext Authenticated viewer's context for authorization
+     * @param viewerContext Authenticated viewer context used to determine field visibility
      * @param updateUserProfileRequest DTO containing fields to update
      * @return Mono of updated user response
      * @throws UserDoesNotExistException if no user found with given ID

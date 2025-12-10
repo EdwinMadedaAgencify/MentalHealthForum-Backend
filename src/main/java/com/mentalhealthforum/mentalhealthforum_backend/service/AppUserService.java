@@ -51,12 +51,19 @@ public interface AppUserService {
      * Applies privacy rules for each user based on their profile visibility and the viewer's privileges.
      * Sets the 'isSelf' flag for the current user in the list.
      *
-     * @param viewerContext The authenticated viewer's context, used for privacy rules.
-     * @param page The requested page number (0-indexed).
-     * @param size The number of items per page.
+     * @param viewerContext    Authenticated viewer context for privacy rules
+     * @param page             Zero-indexed page number
+     * @param size             Number of users per page
+     * @param currentUserFirst Whether to place the current user first on page 0
+     * @param isActive         Optional filter by active status
+     * @param role             Optional role filter
+     * @param groups           Optional group filter
+     * @param sortBy           Field to sort by
+     * @param sortDirection    Sort direction ("asc" or "desc")
+     * @param search           Optional search term
      * @return Mono of a paginated response containing user profile data with privacy rules applied.
      */
-    Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(ViewerContext viewerContext, int page, int size);
+    Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(ViewerContext viewerContext, int page, int size, boolean currentUserFirst, Boolean isActive, String role, String[] groups, String sortBy, String sortDirection, String search);
 
     /**
      * Updates the locally stored user profile (e.g., display name, bio, avatar).
