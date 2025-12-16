@@ -1,31 +1,37 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto;
 
-import jakarta.validation.constraints.Email;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.ValidEmail;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.firstName.ValidFirstName;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.lastName.ValidLastName;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.password.PasswordMatching;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.password.StrongPassword;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.username.ValidUsername;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+@PasswordMatching
 public record RegisterUserRequest(
         @NotBlank(message = "Username is required.")
-        @Size(min = 3, max = 30, message = "Username must be between 3 and 20 characters.")
+        @ValidUsername
         String username,
 
         @NotBlank(message = "Email is required.")
-        @Email(message = "Email must be a valid email format.")
-        @Size(max = 100, message = "Email cannot exceed 100 characters.")
+        @ValidEmail
         String email,
 
         @NotBlank(message = "Password' is required.")
         @Size(min = 8, max = 50, message = "Password must be between 8 and 50 characters.")
+        @StrongPassword
         String password,
 
         @NotBlank(message = "Password confirmation is required.")
         String confirmPassword,
 
         @NotBlank(message = "First name is required.")
-        @Size(max = 50, message = "First name cannot exceed 50 characters.")
+        @ValidFirstName
         String firstName,
 
         @NotBlank(message = "Last name is required.")
-        @Size(max = 50, message = "Last name cannot exceed 50 characters.")
+        @ValidLastName
         String lastName
 ){}

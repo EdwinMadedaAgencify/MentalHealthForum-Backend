@@ -15,7 +15,7 @@ public record UserInfoDto(
         // Basic Profile Information (Authoritative source in Keycloak)
         String email,
         @JsonProperty("preferred_username") String preferredUsername,
-        @JsonProperty("given_name") String givenName,    // maps to firstName
+        @JsonProperty("given_name") String givenName,    // maps to names
         @JsonProperty("family_name") String familyName,  // maps to lastName
 
         // Additional claims (for roles/permissions)

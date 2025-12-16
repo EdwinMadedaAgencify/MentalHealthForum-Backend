@@ -3,7 +3,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
-import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.impl.AppUserServiceImpl;
@@ -11,6 +10,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -20,10 +21,7 @@ import org.springframework.web.util.UriComponentsBuilder; // Use standard UriCom
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+
 
 @RestController
 @RequestMapping("/api/users")

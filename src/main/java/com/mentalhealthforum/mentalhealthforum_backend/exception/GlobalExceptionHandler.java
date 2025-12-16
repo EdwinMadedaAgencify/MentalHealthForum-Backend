@@ -1,9 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.exception;
 
-import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.exc.InvalidFormatException;
-import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ErrorDetail;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardErrorResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
@@ -13,15 +10,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.support.WebExchangeBindException; // Reactive Validation Exception
-import org.springframework.web.server.MethodNotAllowedException;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.server.ServerWebExchange; // Reactive Context
-import org.springframework.web.server.UnsupportedMediaTypeStatusException;
+import org.springframework.web.server.*;
 import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
@@ -117,63 +111,69 @@ public class GlobalExceptionHandler {
         return Mono.just(ResponseEntity.status(ErrorCode.UNSUPPORTED_MEDIA_TYPE.getHttpStatus()).body(response));
     }
     /**
-     * 4b. Handles JSON/Request Body Readability Issues (HttpMessageNotReadableException)
+     * 4b. Handle JSON deserialization / enum mapping errors (WebFlux-specific)
      */
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public Mono<ResponseEntity<StandardErrorResponse>> handleHttpMessageNotReadableException(
-            HttpMessageNotReadableException ex,
+    @ExceptionHandler(ServerWebInputException.class)
+    public Mono<ResponseEntity<StandardErrorResponse>> handleServerWebInputException(
+            ServerWebInputException ex,
             ServerWebExchange exchange){
 
         String path = getPath(exchange);
-        logger.warn("Message Not Readable Exception occured at path '{}'", path);
+        logger.warn("ServerWebInputException at '{}': {}", path, ex.getMessage());
 
-        ErrorDetail detail;
         Throwable cause = ex.getCause();
+        ErrorDetail detail = null;
 
-        switch (cause) {
-            case InvalidFormatException invalidFormatException -> {
+        // Unwrap DecodingException (WebFlux wrapper for Jackson decoding errors)
+        if(cause instanceof org.springframework.core.codec.DecodingException decodingException){
+            Throwable decodingCause = decodingException.getCause();
+
+            if(decodingCause instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException invalidFormatException){
+                //Handle enum / type mismatch
                 String fieldName = invalidFormatException.getPath().stream()
                         .map(JsonMappingException.Reference::getFieldName)
                         .filter(Objects::nonNull)
-                        .findFirst().orElse("unknown");
+                        .findFirst()
+                        .orElse("body");
 
-                String expectedValues = "";
-                if (invalidFormatException.getTargetType() != null && invalidFormatException.getTargetType().isEnum()) {
+                String expected = "";
+                if(invalidFormatException.getTargetType() != null && invalidFormatException.getTargetType().isEnum()){
+                    // Generic enum handling
+                    Class <?> enumClass = invalidFormatException.getTargetType();
+                    Object[] constants = enumClass.getEnumConstants();
 
-                    List<String> enumNames = Arrays.stream(invalidFormatException.getTargetType().getEnumConstants())
-                            .map(Object::toString)
-                            .toList();
-
-                    expectedValues = "Expected one of: [" + String.join(", ", enumNames) + "]";
+                    // show user-friendly enum paths instead of raw names
+                    expected = "Expected one of: [" +
+                            Arrays.stream(constants)
+                                    .map(Object::toString)
+                                    .toList()
+                            + "]";
                 }
 
                 detail = new ErrorDetail(
                         fieldName,
-                        String.format("Invalid value '%s' for field '%s'. %s", invalidFormatException.getValue(), fieldName, expectedValues)
+                        String.format("Invalid value '%s' for field '%s'. %s",
+                                invalidFormatException.getValue(), fieldName, expected)
                 );
             }
-            case MismatchedInputException mismatchedInputException -> {
+            else if(decodingCause instanceof com.fasterxml.jackson.databind.exc.MismatchedInputException mismatchedInputException){
+                // Generic type mismatch / missing field
                 String fieldName = mismatchedInputException.getPath().stream()
                         .map(JsonMappingException.Reference::getFieldName)
                         .filter(Objects::nonNull)
-                        .findFirst().orElse("body");
-                detail = new ErrorDetail(
-                        fieldName,
-                        String.format("Missing or incorrect value for field '%s'. Expected a valid input type.", fieldName)
-                );
+                        .findFirst()
+                        .orElse("body");
+
+                detail = new ErrorDetail(fieldName, "Missing or Invalid value.");
             }
-            case JsonParseException jsonParseException -> detail = new ErrorDetail(
-                    "body",
-                    "Malformed JSON: " + jsonParseException.getOriginalMessage()
-            );
-            case JsonMappingException jsonMappingException -> detail = new ErrorDetail(
-                    "body",
-                    "JSON Mapping Error: " + jsonMappingException.getOriginalMessage()
-            );
-            case null, default -> detail = new ErrorDetail(
-                    "body",
-                    "Malformed request body or invalid input format."
-            );
+            else {
+                // Other decoding problems
+                detail = new ErrorDetail("body", decodingException.getMessage());
+            }
+        }
+        else {
+            // Fallback for other ServerWebInputException causes
+            detail = new ErrorDetail("body", cause != null? cause.getMessage(): ex.getMessage());
         }
 
         StandardErrorResponse response = new StandardErrorResponse(
@@ -182,6 +182,7 @@ public class GlobalExceptionHandler {
                 path,
                 List.of(detail)
         );
+
         return Mono.just(ResponseEntity.status(ErrorCode.VALIDATION_FAILED.getHttpStatus()).body(response));
     }
     /**
@@ -213,7 +214,27 @@ public class GlobalExceptionHandler {
         return Mono.just(ResponseEntity.status(ErrorCode.VALIDATION_FAILED.getHttpStatus()).body(response));
     }
     /**
-     * 6. Handles WebFlux specific exceptions like 404/405 (Not Found / Method Not Allowed)
+     * 6. Handles Method-Level Security AuthorizationDeniedException (403)  Exception
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public Mono<ResponseEntity<StandardErrorResponse>> handleAuthorizationDeniedException(
+            AuthorizationDeniedException ex,
+            ServerWebExchange exchange){
+
+        String path = getPath(exchange);
+        logger.warn("AuthorizationDeniedException occurred at '{}': {}", path, ex.getMessage());
+
+        StandardErrorResponse response = new StandardErrorResponse(
+                "Forbidden: Insufficient permissions for this resource.",
+                ErrorCode.FORBIDDEN,
+                path,
+                null
+        );
+
+        return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).body(response));
+    }
+    /**
+     * 7. Handles WebFlux specific exceptions like 404/405 (Not Found / Method Not Allowed)
      * Handles exceptions that are wrapped by WebFlux like NoResourceFoundException and MissingServletRequestParameterException.
      */
     @ExceptionHandler({MethodNotAllowedException.class, ResponseStatusException.class})
@@ -222,6 +243,7 @@ public class GlobalExceptionHandler {
             ServerWebExchange exchange){
 
         String path = getPath(exchange);
+        logger.warn("MethodNotAllowedException occurred at path '{}'", path);
         HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
         ErrorCode errorCode;
         String message;
@@ -254,7 +276,55 @@ public class GlobalExceptionHandler {
         return Mono.just(ResponseEntity.status(status != null? status: HttpStatus.INTERNAL_SERVER_ERROR).body(response));
     }
     /**
-     * 7. Handles All Other Uncaught Exceptions (Fallback 500 handler)
+     * 8. Handle external service connection errors (Connection refused, host down, etc.)
+     * Returns 503 Service Unavailable
+     */
+    @ExceptionHandler({
+            jakarta.ws.rs.ProcessingException.class,
+            org.springframework.web.reactive.function.client.WebClientRequestException.class,
+            java.net.ConnectException.class,
+            java.net.SocketException.class,
+    })
+    public Mono<ResponseEntity<StandardErrorResponse>> handleDownstreamConnectionErrors(
+            Exception ex, ServerWebExchange exchange) {
+
+        String path = getPath(exchange);
+        logger.error("Downstream service connection error at '{}': {}", path, ex.getMessage());
+
+        StandardErrorResponse response = new StandardErrorResponse(
+                "Downstream service is temporarily unavailable. Please try again later.",
+                ErrorCode.SERVICE_UNAVAILABLE,
+                path,
+                null
+        );
+
+        return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response));
+    }
+    /**
+     * 9. Handle external service timeout errors
+     * Returns 504 Gateway Timeout
+     */
+    @ExceptionHandler({
+           java.net.SocketTimeoutException.class,
+           java.util.concurrent.TimeoutException.class
+    })
+    public Mono<ResponseEntity<StandardErrorResponse>> handleDownstreamServiceTimeoutErrors(
+            Exception ex, ServerWebExchange exchange) {
+
+        String path = getPath(exchange);
+        logger.error("Downstream service timeout error at '{}': {}", path, ex.getMessage());
+
+        StandardErrorResponse response = new StandardErrorResponse(
+                "Downstream service is taking too long to respond. Please try again.",
+                ErrorCode.GATEWAY_TIMEOUT,
+                path,
+                null
+        );
+
+        return Mono.just(ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(response));
+    }
+    /**
+     * 11. Handles All Other Uncaught Exceptions (Fallback 500 handler)
      */
     @ExceptionHandler(Exception.class)
     public Mono<ResponseEntity<StandardErrorResponse>> handleGenericException(

@@ -1,7 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.config;
 
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -25,7 +24,6 @@ public class SecurityConfig {
 
     private final String principalClaimName;
     private final SecurityExceptionHandler securityExceptionHandler;  // SecurityExceptionHandler implements ServerAuthenticationEntryPoint/ServerAccessDeniedHandler
-    private final CookieToJwtConverter cookieToJwtConverter;
 
     public SecurityConfig(
             JwtProperties jwtProperties,
@@ -34,7 +32,6 @@ public class SecurityConfig {
     ){
         this.principalClaimName = jwtProperties.getPrincipalClaimName();
         this.securityExceptionHandler = securityExceptionHandler;
-        this.cookieToJwtConverter = cookieToJwtConverter;
     }
 
     private static final String[] AUTH_WHITELIST = {

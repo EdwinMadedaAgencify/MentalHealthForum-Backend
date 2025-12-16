@@ -1,7 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.RequiredAction;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
@@ -25,7 +26,6 @@ import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.
 public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
-    private static final RealmRole DEFAULT_FORUM_ROLE = RealmRole.FORUM_MEMBER;
 
     private final KeycloakAdminManager adminManager;
 
@@ -52,14 +52,14 @@ public class UserServiceImpl implements UserService {
                         throw new UserExistsException("An account already exists for this email.");
                     }
 
-                    if (!registerUserRequest.password().trim().equals(registerUserRequest.confirmPassword().trim())) {
-                        throw new PasswordMismatchException("Password and confirmation password do not match.");
-                    }
+//                    if (!registerUserRequest.password().trim().equals(registerUserRequest.confirmPassword().trim())) {
+//                        throw new PasswordMismatchException("Password and confirmation password do not match.");
+//                    }
 
                     // Create password credential using the Manager's method
                     // This method is already validated to throw InvalidPasswordException
                     String password = registerUserRequest.password().trim();
-                    var passwordCred = adminManager.createPasswordCredential(password);
+                    var passwordCred = adminManager.createPasswordCredential(password, false);
 
                     UserRepresentation user = new UserRepresentation();
                     user.setEnabled(true);
@@ -70,14 +70,17 @@ public class UserServiceImpl implements UserService {
                     user.setCredentials(Collections.singletonList(passwordCred));
 
                     // Temporary FIX: Set email verified to true & clear required actions for ROPC flow
-                    user.setEmailVerified(true);
-                    user.setRequiredActions(Collections.emptyList());
+                    user.setEmailVerified(false);
+                    user.setRequiredActions(List.of(RequiredAction.VERIFY_EMAIL.name()));
 
                     // Blocking user creation delegated to the Manager
                     String userId = adminManager.createUser(user);
 
                     // Blocking role assignment delegated to the Manager
-                    adminManager.assignUserRole(userId, DEFAULT_FORUM_ROLE);
+                    // adminManager.assignUserRole(userId, DEFAULT_FORUM_ROLE);
+
+                    // Assign to /members/new group using enum
+                    adminManager.assignUserToGroup(userId, GroupPath.MEMBERS_ACTIVE);
 
                     return userId;
                 })
@@ -166,9 +169,9 @@ public class UserServiceImpl implements UserService {
                     adminManager.findUserByUserId(userId) // Blocking lookup
                             .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
 
-                    if (!resetPasswordRequest.newPassword().equals(resetPasswordRequest.confirmPassword())) {
-                        throw new PasswordMismatchException("New password and confirmation do not match.");
-                    }
+//                    if (!resetPasswordRequest.newPassword().equals(resetPasswordRequest.confirmPassword())) {
+//                        throw new PasswordMismatchException("New password and confirmation do not match.");
+//                    }
 
                     adminManager.resetPassword(userId, resetPasswordRequest.newPassword().trim()); // Blocking reset
                 })

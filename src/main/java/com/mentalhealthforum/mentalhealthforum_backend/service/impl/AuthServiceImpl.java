@@ -20,6 +20,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -117,7 +118,34 @@ public class AuthServiceImpl implements AuthService {
                                         }
                                     });
                         })
-                .bodyToMono(JwtResponse.class);
+                .onStatus(
+                        HttpStatusCode::is5xxServerError,
+                        clientResponse -> {
+                            return clientResponse.bodyToMono(String.class)
+                                    .doOnNext(body -> log.error("Keycloak Server Error (5xx): {}", body))
+                                    .then(Mono.error(new ApiException(
+                                            "Authentication service is temporarily unavailable.",
+                                            ErrorCode.AUTHENTICATION_SERVICE_ERROR
+                                    )));
+                        })
+                .bodyToMono(JwtResponse.class)
+                // ADD THIS: Handle connection/timeout errors
+                .onErrorResume(WebClientRequestException.class, e -> {
+                    log.error("Cannot connect to authentication service: {}", e.getMessage());
+                    return Mono.error(new ApiException(
+                            "Authentication service is temporarily unavailable. Please try again later.",
+                            ErrorCode.AUTHENTICATION_SERVICE_ERROR,
+                            e
+                    ));
+                })
+                .onErrorResume(io.netty.channel.ConnectTimeoutException.class, e -> {
+                    log.error("Connection timeout to authentication service: {}", e.getMessage());
+                    return Mono.error(new ApiException(
+                            "Authentication service connection timeout. Please try again.",
+                            ErrorCode.AUTHENTICATION_SERVICE_ERROR,
+                            e
+                    ));
+                });
     }
 
     /**

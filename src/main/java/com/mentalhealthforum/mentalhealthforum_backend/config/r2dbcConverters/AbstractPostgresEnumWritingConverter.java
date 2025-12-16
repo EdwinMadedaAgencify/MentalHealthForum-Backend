@@ -1,4 +1,4 @@
-package com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters;
+package com.mentalhealthforum.mentalhealthforum_backend.config.r2dbcConverters;
 
 import org.jetbrains.annotations.NotNull;
 import org.springframework.core.convert.converter.Converter;

@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
+import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
 import org.keycloak.representations.idm.CredentialRepresentation;
@@ -23,6 +24,8 @@ public interface KeycloakAdminManager {
 
     Optional<UserRepresentation> findUserByEmail(String email);
 
+    Optional<UserRepresentation> findUserByIdentifier(String identifier);
+
     long countUsers();
 
     List<UserRepresentation> listUsers(int firstResult, int size);
@@ -45,7 +48,11 @@ public interface KeycloakAdminManager {
 
     List<String> getUserRealmRoles(String userId);
 
+    void assignUserToGroup(String userId, GroupPath group);
+
     List<String> getUserGroups(String userId);
 
-    CredentialRepresentation createPasswordCredential(String password) throws InvalidPasswordException;
+    Optional<List<String>> getRequiredActions(String identifier);
+
+    CredentialRepresentation createPasswordCredential(String password, boolean isTemporary) throws InvalidPasswordException;
 }

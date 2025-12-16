@@ -16,7 +16,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
 
 /**
  * Reactive exception handler for 401 (Authentication) and 403 (Authorization) errors.

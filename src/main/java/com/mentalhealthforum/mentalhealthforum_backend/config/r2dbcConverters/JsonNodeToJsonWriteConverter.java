@@ -1,4 +1,4 @@
-package com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters;
+package com.mentalhealthforum.mentalhealthforum_backend.config.r2dbcConverters;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

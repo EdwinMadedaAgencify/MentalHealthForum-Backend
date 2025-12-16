@@ -20,6 +20,12 @@ public enum ErrorCode {
     // --- Keycloak Sync Errors ---
     KEYCLOAK_SYNC_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "An error occurred while syncing user data."),
 
+    // --- Username Error ---
+    USERNAME_GENERATION_FAILED(HttpStatus.BAD_REQUEST, "Could not generate a valid username from the provided names. Please provide a username manually."),
+
+    // --- Group Error --
+    GROUP_ASSIGNMENT_VIOLATION(HttpStatus.BAD_REQUEST,"Group %s is not assignable. Only leaf groups with role grants can be assigned."),
+
     // --- Password/Policy Errors ---
     PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "Password does not meet required complexity standards."),
     PASSWORD_CONFIRM_MISMATCH(HttpStatus.BAD_REQUEST, "Password and Confirmation do not match."),
@@ -38,7 +44,9 @@ public enum ErrorCode {
     USER_ACTION_REQUIRED(HttpStatus.FORBIDDEN, "AppUser authentication succeeded but requires further action."),
 
     // --- Generic Fallback ---
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal server error occurred.");
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal server error occurred."),
+    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Downstream service is temporarily unavailable." ),
+    GATEWAY_TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "Downstream service is taking too long to respond." );
 
 
     private final HttpStatus httpStatus;

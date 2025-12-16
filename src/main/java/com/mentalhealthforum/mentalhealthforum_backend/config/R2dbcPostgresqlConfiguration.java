@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mentalhealthforum.mentalhealthforum_backend.config.enumConverters.*;
+import com.mentalhealthforum.mentalhealthforum_backend.config.r2dbcConverters.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
