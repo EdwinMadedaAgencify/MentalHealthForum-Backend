@@ -3,10 +3,10 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RequiredAction;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PasswordMismatchException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
+import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakUserDtoMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
@@ -28,10 +28,12 @@ public class UserServiceImpl implements UserService {
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     private final KeycloakAdminManager adminManager;
+    private final KeycloakUserDtoMapper keycloakUserDtoMapper;
 
     // Inject the new KeycloakAdminManagerImpl
-    public UserServiceImpl(KeycloakAdminManager adminManager) {
+    public UserServiceImpl(KeycloakAdminManager adminManager, KeycloakUserDtoMapper keycloakUserDtoMapper) {
         this.adminManager = adminManager;
+        this.keycloakUserDtoMapper = keycloakUserDtoMapper;
     }
 
     // ------------------ Public API Methods (Reactive Wrappers) ------------------
@@ -115,7 +117,7 @@ public class UserServiceImpl implements UserService {
                         log.debug("No profile changes detected for user ID: {}", userId);
                     }
 
-                    return mapToKeycloakUserDto(userRep);
+                    return keycloakUserDtoMapper.mapToKeycloakUserDto(userRep);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -141,7 +143,7 @@ public class UserServiceImpl implements UserService {
         return Mono.fromCallable(() ->
                         // Blocking lookup, then map to Response DTO
                         adminManager.findUserByUserId(userId)
-                                .map(this::mapToKeycloakUserDto)
+                                .map(keycloakUserDtoMapper::mapToKeycloakUserDto)
                                 .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId))
                 )
                 .subscribeOn(Schedulers.boundedElastic());
@@ -155,7 +157,7 @@ public class UserServiceImpl implements UserService {
 
                     // Map the list of UserRepresentation to KeycloakUserDto DTOs
                     return userReps.stream()
-                            .map(this::mapToKeycloakUserDto)
+                            .map(keycloakUserDtoMapper::mapToKeycloakUserDto)
                             .toList();
                 })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -177,20 +179,5 @@ public class UserServiceImpl implements UserService {
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
-    }
-
-    // ------------------ Private Helper Methods (Simplified) ------------------
-
-    private KeycloakUserDto mapToKeycloakUserDto(UserRepresentation userRep){
-        return new KeycloakUserDto(
-                userRep.getId(),
-                userRep.getUsername(),
-                userRep.getFirstName(),
-                userRep.getLastName(),
-                userRep.getEmail(),
-                userRep.isEnabled(),
-                userRep.isEmailVerified(),
-                userRep.getCreatedTimestamp()
-        );
     }
 }

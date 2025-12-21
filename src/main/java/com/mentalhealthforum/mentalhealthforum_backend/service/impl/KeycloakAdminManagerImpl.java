@@ -5,7 +5,6 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidGroupAssignmentException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
 import com.mentalhealthforum.mentalhealthforum_backend.validation.password.PasswordPolicy;
 import jakarta.annotation.PostConstruct;
@@ -26,10 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.mentalhealthforum.mentalhealthforum_backend.utils.UUIDUtils.isUUID;
@@ -171,23 +167,69 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     }
 
     // --- Role, Groups and Credential Helpers (Now managed here) ---
+    @Override
+    public List<String> getUserRealmRolesFromGroups(String userId){
+        try{
+            UserResource userResource = getUsersResource().get(userId);
+
+            // Get all groups user belongs to
+            List<GroupRepresentation> userGroups = userResource.groups();
+
+            // Collect ALL roles from ALL groups
+            Set<String> rolesFromGroups = new HashSet<>();
+
+            for (GroupRepresentation group: userGroups) {
+                List<RoleRepresentation> groupRoles = getRealmResource()
+                        .groups()
+                        .group(group.getId())
+                        .roles()
+                        .realmLevel()
+                        .listAll();
+
+                rolesFromGroups.addAll(
+                        groupRoles.stream()
+                                .map(RoleRepresentation::getName)
+                                .toList()
+                );
+            }
+
+            return new ArrayList<>(rolesFromGroups);
+        } catch(Exception e){
+            log.error("Failed to fetch roles for user {}", userId, e);
+            return Collections.emptyList();
+        }
+    }
 
     @Override
     public List<String> getUserRealmRoles(String userId){
         try {
-            return getUsersResource().get(userId)
-                    .roles()
+            UserResource userResource = getUsersResource().get(userId);
+
+            Set<String> allRoles = new HashSet<>(getUserRealmRolesFromGroups(userId));
+
+            // Get direct user roles, but EXCLUDE any that are in RealmRole enum
+            // (because those should come from groups, not direct assignment)
+            List<RoleRepresentation> directRoles = userResource.roles()
                     .realmLevel()
-                    .listAll()
-                    .stream()
+                    .listAll();
+
+            // EXCLUDE: Remove roles that are in our RealmRole enum
+            // These should only come from group inheritance
+            List<String> validDirectRoles = directRoles.stream()
                     .map(RoleRepresentation::getName)
+                    .filter(role -> !RealmRole.isValidRole(role))
                     .toList();
+
+            allRoles.addAll(validDirectRoles);
+
+            return new ArrayList<>(allRoles);
 
         } catch (Exception e){
             log.error("Failed to fetch roles for user {}", userId, e);
             return Collections.emptyList();
         }
     }
+
 
     @Override
     public void assignUserRole(String userId, RealmRole role) {
@@ -213,7 +255,15 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         }
 
         try{
+            UserResource userResource = getUsersResource().get(userId);
 
+            // Remove from all groups first
+            List<GroupRepresentation> currentGroups = userResource.groups();
+            for (GroupRepresentation currentGroup : currentGroups){
+                userResource.leaveGroup(currentGroup.getId());
+            }
+
+            // Then add to new group
             String groupId = groupCache.get(group.getPath());
 
             if(groupId == null){
@@ -230,7 +280,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
                 }
             }
 
-            // Assign user to group
+            // Assign user to group (now they're only in this one)
             getUsersResource().get(userId).joinGroup(groupId);
             log.info("Assigned user {} to group {}", userId, group.getPath());
         } catch (Exception e){

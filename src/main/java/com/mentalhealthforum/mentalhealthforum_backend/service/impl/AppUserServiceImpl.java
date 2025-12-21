@@ -10,6 +10,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
+import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
@@ -96,7 +97,7 @@ public class AppUserServiceImpl implements AppUserService {
         userDetails.setDateJoined(keycloakUserDto.getCreatedInstant());
 
         // Fetch roles and groups from Keycloak
-        List<String> roles = adminManager.getUserRealmRoles(keycloakUserDto.userId());
+        List<String> roles = adminManager.getUserRealmRolesFromGroups(keycloakUserDto.userId());
         List<String> groups = adminManager.getUserGroups(keycloakUserDto.userId());
 
         // Convert to sets for local storage
@@ -222,6 +223,13 @@ public class AppUserServiceImpl implements AppUserService {
     public Mono<UserResponse> getAppUserWithContext(String userId, ViewerContext viewerContext) {
         return appUserRepository.findAppUserByKeycloakId(userId)
                 .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
+                .map(appUser -> {
+                    if( viewerContext.isAdmin()){
+                        Set<String> roles = new HashSet<>(adminManager.getUserRealmRoles(appUser.getKeycloakId().toString()));
+                        appUser.setRoles(roles);
+                    }
+                    return appUser;
+                })
                 .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**

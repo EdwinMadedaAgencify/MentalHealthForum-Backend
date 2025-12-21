@@ -1,13 +1,14 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.AdminCreateUserRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.AdminCreateUserResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RequiredAction;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UsernameGenerationException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AdminUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
+import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakUserDtoMapper;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.setIfChanged;
 import static com.mentalhealthforum.mentalhealthforum_backend.utils.NormalizeUtils.normalizeUnicode;
 
 @Service
@@ -28,9 +30,11 @@ public class AdminUserServiceImpl implements AdminUserService {
     private static final Logger log = LoggerFactory.getLogger(AdminUserServiceImpl.class);
 
     private final KeycloakAdminManager adminManager;
+    private final KeycloakUserDtoMapper keycloakUserDtoMapper;
 
-    public AdminUserServiceImpl(KeycloakAdminManager adminManager) {
+    public AdminUserServiceImpl(KeycloakAdminManager adminManager, KeycloakUserDtoMapper keycloakUserDtoMapper) {
         this.adminManager = adminManager;
+        this.keycloakUserDtoMapper = keycloakUserDtoMapper;
     }
 
     /**
@@ -106,6 +110,42 @@ public class AdminUserServiceImpl implements AdminUserService {
                     );
                 })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<KeycloakUserDto> updateUserAsAdmin(String userId, AdminUpdateUserRequest request) {
+        return Mono.fromCallable(()-> {
+            // Fetch user from Keycloak
+            UserRepresentation userRep = adminManager.findUserByUserId(userId)
+                            .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
+
+            boolean isEnabledChanged = false;
+            boolean isGroupChanged = false;
+
+            isEnabledChanged = setIfChanged(request.isEnabled(), userRep.isEnabled(), userRep::setEnabled);
+            if(isEnabledChanged && request.isEnabled() != null){
+                log.info("Updating enabled status for user {} to {}", userId, request.isEnabled());
+            }
+
+            List<String> currentGroups = adminManager.getUserGroups(userId);
+            String targetGroupPath = request.group().getPath();
+
+            isGroupChanged = currentGroups.isEmpty() || !currentGroups.contains(targetGroupPath);
+
+            if(isGroupChanged){
+                adminManager.assignUserToGroup(userId, request.group());
+                log.info("Updated group for user {} to {}", userId, targetGroupPath);
+            }
+
+            if(isEnabledChanged || isGroupChanged){
+                adminManager.updateUser(userRep);
+                log.info("Successfully updated profile for user ID: {}", userId);
+            } else {
+                log.debug("No profile changes detected for user ID: {}", userId);
+            }
+
+           return keycloakUserDtoMapper.mapToKeycloakUserDto(userRep);
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     private String generateUsername(String firstName, String lastName) {

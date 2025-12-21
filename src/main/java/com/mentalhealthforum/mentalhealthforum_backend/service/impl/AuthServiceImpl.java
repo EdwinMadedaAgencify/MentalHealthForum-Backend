@@ -129,7 +129,6 @@ public class AuthServiceImpl implements AuthService {
                                     )));
                         })
                 .bodyToMono(JwtResponse.class)
-                // ADD THIS: Handle connection/timeout errors
                 .onErrorResume(WebClientRequestException.class, e -> {
                     log.error("Cannot connect to authentication service: {}", e.getMessage());
                     return Mono.error(new ApiException(

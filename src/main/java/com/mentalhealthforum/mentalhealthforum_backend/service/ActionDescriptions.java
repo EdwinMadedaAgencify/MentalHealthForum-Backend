@@ -9,7 +9,7 @@ public class ActionDescriptions {
         return actions.stream()
                 .map(action ->  RequiredAction.fromKeycloak(action)
                         .map(RequiredAction::getUserMessage)
-                        .orElse("Additional actions are required in your account mono.")
+                        .orElse("Additional actions are required in your account.")
                 )
                 .toList();
     }

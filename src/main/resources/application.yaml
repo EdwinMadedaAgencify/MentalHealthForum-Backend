@@ -35,6 +35,11 @@ keycloak:
   credentials:
     secret: ${MHF_BACKEND_SECRET:2uVmExC9Jm5R3whLLicrICsWuY6n4vMq}
 
+novu:
+  api-key: ${NOVU_API_KEY:90dbbf2702eb22457a356c2c2d14b52c}
+  base-url: http://localhost:3000/v1
+  app-identifier: YIZ_AuFIOVH7
+
 logging:
   level:
     org.springframework.security: INFO
