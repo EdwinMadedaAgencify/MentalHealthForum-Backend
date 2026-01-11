@@ -1,6 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
 import org.keycloak.representations.idm.CredentialRepresentation;
@@ -51,11 +52,29 @@ public interface KeycloakAdminManager {
 
     List<String> getUserRealmRoles(String userId);
 
+    void assignInternalRole(String userId, InternalRole internalRole);
+
+    void removeInternalRole(String userId, InternalRole internalRole);
+
     void assignUserToGroup(String userId, GroupPath group);
+
+    String getUserPrimaryGroupPath(String userId);
 
     List<String> getUserGroups(String userId);
 
     Optional<List<String>> getRequiredActions(String identifier);
 
-    CredentialRepresentation createPasswordCredential(String password, boolean isTemporary) throws InvalidPasswordException;
+    void setUserAttribute(String userId, String key, String value);
+
+    Optional<String> getUserAttribute(String userId, String key);
+
+    void markAsSyncedLocally(String userId, boolean sync);
+
+    boolean isSyncedLocally(String userId);
+
+    List<UserRepresentation> findUnsyncedUsers();
+
+    void verifyUserEmail(String email);
+
+    CredentialRepresentation createPasswordCredential(String password) throws InvalidPasswordException;
 }

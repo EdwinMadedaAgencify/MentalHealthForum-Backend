@@ -1,14 +1,11 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.RequiredAction;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UsernameGenerationException;
-import com.mentalhealthforum.mentalhealthforum_backend.service.AdminUserService;
-import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
-import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakUserDtoMapper;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.AdminInvitePayload;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.*;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.service.*;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +16,7 @@ import reactor.core.scheduler.Schedulers;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.setIfChanged;
@@ -31,10 +29,35 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     private final KeycloakAdminManager adminManager;
     private final KeycloakUserDtoMapper keycloakUserDtoMapper;
+    private final VerificationService verificationService;
+    private final NovuService novuService;
+    private final AdminInvitationService adminInvitationService;
+    private final AdminInvitationRepository adminInvitationRepository;
 
-    public AdminUserServiceImpl(KeycloakAdminManager adminManager, KeycloakUserDtoMapper keycloakUserDtoMapper) {
+
+    // 1. Define the internal "Assembly Line" package
+    private record AdminUserContext(
+            String userId,
+            String username,
+            String email,
+            String firstName,
+            String tempPassword,
+            String groupName,
+            boolean sendInvitationEmail
+    ){}
+
+    public AdminUserServiceImpl(
+            KeycloakAdminManager adminManager,
+            KeycloakUserDtoMapper keycloakUserDtoMapper,
+            VerificationService verificationService,
+            NovuService novuService,
+            AdminInvitationService adminInvitationService, AdminInvitationRepository adminInvitationRepository) {
         this.adminManager = adminManager;
         this.keycloakUserDtoMapper = keycloakUserDtoMapper;
+        this.verificationService = verificationService;
+        this.novuService = novuService;
+        this.adminInvitationService = adminInvitationService;
+        this.adminInvitationRepository = adminInvitationRepository;
     }
 
     /**
@@ -46,70 +69,158 @@ public class AdminUserServiceImpl implements AdminUserService {
      * - Allows explicit group assignment (not default /members/new)
      * - Optionally sends invitation email
      *
-     * @param request Admin user creation request containing user details and group assignment
+     * @param request       Admin user creation request containing user details and group assignment
+     * @param viewerContext Viewer Context
      * @return Mono containing the AdminCreateUserResponse with user ID, temporary password, and invitation details
      */
     @Override
-    public Mono<AdminCreateUserResponse> createUserAsAdmin(AdminCreateUserRequest request) {
+    public Mono<AdminCreateUserResponse> createUserAsAdmin(
+            AdminCreateUserRequest request,
+            ViewerContext viewerContext) {
         return Mono.fromCallable(()-> {
                     // 1. Normalize and validate inputs
                     String email = request.email().trim().toLowerCase();
                     String firstName = request.firstName().trim();
                     String lastName = request.lastName().trim();
 
-                    // 2. Validate uniqueness (same as self-registration)
-                    if(adminManager.findUserByEmail(email).isPresent()){
-                        throw new UserExistsException("An account already exists for this email.");
-                    }
-
-                    // 3. Determine username (auto-generate if not provided)
                     String username = request.username() != null?
                             request.username().trim() :
                             generateUsername(firstName, lastName);
 
-                    if(adminManager.findUserByUsername(username).isPresent()){
-                        // If auto-generated username exists, add random suffix
-                        username = username + "." + ThreadLocalRandom.current().nextInt(100, 199);
-                    }
-
-                    // 3. Auto-generate strong password
                     String temporaryPassword = generateTemporaryPassword();
 
-                    var passwordCred = adminManager.createPasswordCredential(temporaryPassword, true);
+                    // Validate uniqueness (same as self-registration)
+                    if(adminManager.findUserByEmail(email).isPresent()){
+                        throw new UserExistsException("An account already exists for this email.");
+                    }
 
-                    // 5. Create user with PENDING ACTIONS
-                    UserRepresentation user = new UserRepresentation();
-                    user.setEnabled(true);
-                    user.setUsername(username);
-                    user.setEmail(email);
-                    user.setFirstName(firstName);
-                    user.setLastName(lastName);
-                    user.setCredentials(List.of(passwordCred));
+                    if(adminManager.findUserByUsername(username).isPresent()){
+                        // If auto-generated username exists, add random suffix
+                        username = "%s.%d".formatted(username, ThreadLocalRandom.current().nextInt(100, 199));
+                    }
 
-                    // CRITICAL DIFFERENCE: Set pending actions
-                    user.setEmailVerified(false); // Admin-created users need to verify
-                    user.setRequiredActions(determineRequiredActions(request.group()));
+                    var passwordCred = adminManager.createPasswordCredential(temporaryPassword);
 
-                    // 6. Create user in Keycloak
-                    String userId = adminManager.createUser(user);
+                    // Create user with PENDING ACTIONS
+                    UserRepresentation userRep = new UserRepresentation();
+                    userRep.setEnabled(true);
+                    userRep.setUsername(username);
+                    userRep.setEmail(email);
+                    userRep.setFirstName(firstName);
+                    userRep.setLastName(lastName);
+                    userRep.setCredentials(List.of(passwordCred));
 
-                    // 7. Assign to specified group (not default /members/new)
+                    // Set pending actions
+                    userRep.setEmailVerified(false); // Admin-created users need to verify
+                    userRep.setRequiredActions(determineRequiredActions(request.group()));
+
+
+                    // Create user in Keycloak
+                    String userId = adminManager.createUser(userRep);
+
+                    // Assign to specified group (not default /members/new)
                     adminManager.assignUserToGroup(userId, request.group());
+                    adminManager.markAsSyncedLocally(userId, false);
+                    adminManager.assignInternalRole(userId, InternalRole.ONBOARDING);
 
-                    // 8. Store temporary password for response (never in DB)
-                    // We'll return it in the response DTO
-
-                    // 9. Return response with temporary password and placeholder invitation link
-                    // Note: Email sending and invitation link generation will be added later with Novu
-                    return new AdminCreateUserResponse(
+                    // Wrap in the Record instead of a Map
+                    return new AdminUserContext(
                             userId,
                             username,
+                            email,
+                            firstName,
                             temporaryPassword,
-                            "invitation-link-placeholder", // In real impl: actual link
-                            false // Email not sent yet (Novu integration later
+                            getFriendlyGroupName(request.group().getPath()),
+                            request.sendInvitationEmail()
                     );
                 })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic())
+                // --- SURGICAL INJECTION START ---
+                .flatMap(ctx -> {
+                    return Mono.fromCallable(() -> adminManager.findUserByUserId(ctx.userId)
+                            .map(keycloakUserDtoMapper::mapToKeycloakUserDto)
+                            .orElseThrow(() -> new UserDoesNotExistException("Failed to retrieve created user")))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMap(keycloakUserDto ->
+                                    adminInvitationService.createInvitation(keycloakUserDto, viewerContext.getUserId()))
+                            .thenReturn(ctx); // Return the context to keep the assembly line moving
+                })
+                .flatMap(this::handleInvitationFlow);
+    }
+
+    @Override
+    public Mono<AdminCreateUserResponse> reissueAdminInvitation(String userId, ReissueInvitationRequest request){
+        String email = request.email().trim().toLowerCase();
+
+        // 5. Generate a new verification invitation
+        return Mono.fromCallable(()-> {
+            // 1. Find user in Keycloak (Blocking call)
+                    UserRepresentation user = adminManager.findUserByUserId(userId)
+                            .orElseThrow(UserDoesNotExistException::new);
+
+            // 2. Security Check: Don't resend if they are already synced (active)
+            if(adminManager.isSyncedLocally(userId)){
+                throw new UserAlreadyActiveException();
+            }
+
+            // 3. Security Check: Don't resend if they are already verified
+            if(Boolean.TRUE.equals(user.isEmailVerified())){
+                throw new InvitationAlreadyVerifiedException();
+            }
+
+            if(!user.getEmail().equalsIgnoreCase(email)){
+                user.setEmail(email);
+                adminManager.updateUser(user);
+            }
+
+            // 4. Generate a fresh temporary password
+            String newTempPassword = generateTemporaryPassword();
+            var passwordCred = adminManager.createPasswordCredential(newTempPassword);
+
+            // 5. Update Keycloak (Resetting the temp password)
+            adminManager.resetPassword(user.getId(), newTempPassword);
+
+            // Note: We'd need to know the groupPath. If we don't store it,
+            // we can fetch the user's current groups from Keycloak.
+            // Fetch group path while still in the blocking thread pool
+            if(request.group() != null){
+                adminManager.assignUserToGroup(userId, request.group());
+            }
+
+            String groupPath = adminManager.getUserPrimaryGroupPath(user.getId());
+
+            // Wrap in the Record instead of a Map
+            return new AdminUserContext(
+                    user.getId(),
+                    user.getUsername(),
+                    user.getEmail(),
+                    user.getFirstName(),
+                    newTempPassword,
+                    getFriendlyGroupName(groupPath),
+                    request.sendInvitationEmail()
+            );
+
+        }).subscribeOn(Schedulers.boundedElastic())
+                // --- SURGICAL INJECTION START ---
+                .flatMap(ctx ->{
+                    return Mono.fromCallable(() -> adminManager.findUserByUserId(ctx.userId)
+                                    .map(keycloakUserDtoMapper::mapToKeycloakUserDto)
+                                    .orElseThrow(() -> new UserDoesNotExistException("Failed to retrieve user")))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMap(adminInvitationService::updateInvitation)
+                            .thenReturn(ctx); // Return the co
+                })
+                .flatMap(ctx -> {
+                    return adminInvitationRepository.findByKeycloakId(UUID.fromString(ctx.userId))
+                            .flatMap(adminInvitation -> {
+                                // RESET the flags so the new temp password actually works
+                                adminInvitation.setIsInitialLogin(true);
+                                adminInvitation.setCurrentStage(OnboardingStage.AWAITING_VERIFICATION);
+                                return adminInvitationRepository.save(adminInvitation);
+                            })
+                            .thenReturn(ctx);
+                })
+                .flatMap(this::handleInvitationFlow);
     }
 
     @Override
@@ -117,7 +228,14 @@ public class AdminUserServiceImpl implements AdminUserService {
         return Mono.fromCallable(()-> {
             // Fetch user from Keycloak
             UserRepresentation userRep = adminManager.findUserByUserId(userId)
-                            .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
+                            .orElseThrow(UserDoesNotExistException::new);
+
+            boolean isSynced = adminManager.isSyncedLocally(userId);
+
+            if (!isSynced) {
+                throw new UserNotReadyException(
+                        "Cannot update profile: User has not completed onboarding. Use 'Reissue Invite' to manage pending users.");
+            }
 
             boolean isEnabledChanged = false;
             boolean isGroupChanged = false;
@@ -148,12 +266,85 @@ public class AdminUserServiceImpl implements AdminUserService {
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
+    @Override
+    public Mono<Void> revokeInvitation(String userId) {
+        return Mono.fromCallable(()-> {
+            // 1. Fetch the latest state from Keycloak (Blocking call)
+            UserRepresentation userRep = adminManager.findUserByUserId(userId)
+                    .orElseThrow(UserDoesNotExistException::new);
+
+            // 2. SAFETY GATE: Enforce the "Lobby Only" rule
+            // If they are verified OR Keycloak says they are already synced, they are no longer an "Invitation"
+
+            // Security Check: Don't revoke if they are already synced (active)
+            if(adminManager.isSyncedLocally(userId)){
+                throw new UserAlreadyActiveException();
+            }
+
+            // Security Check: Don't revoke if they are already verified
+            if(Boolean.TRUE.equals(userRep.isEmailVerified())){
+                throw new InvitationAlreadyVerifiedException();
+            }
+
+            adminManager.deleteUser(userId);
+            return userId;
+        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(id -> adminInvitationService.completeInvitation(UUID.fromString(id)));
+    }
+
+    /**
+     * Reusable logic for the "Invitation" phase of the mpango.
+     * This handles the verification link and the conditional Novu trigger.
+     */
+    private Mono<AdminCreateUserResponse> handleInvitationFlow(AdminUserContext ctx){
+        return verificationService.createVerificationLink(ctx.email, VerificationType.INVITED, ctx.groupName, null)
+                .flatMap(invitationLink -> {
+
+                    // Logic: Only send if the admin requested it
+                    if(ctx.sendInvitationEmail){
+                        // 6. Trigger Novu with the NEW temp password
+
+                        AdminInvitePayload payload = new AdminInvitePayload(
+                                ctx.firstName,
+                                ctx.tempPassword,
+                                invitationLink,
+                                ctx.groupName
+                        );
+
+                        return novuService.triggerEvent(NovuWorkflow.ADMIN_ONBOARDING_INVITE, ctx.userId, ctx.email, payload)
+                                .map(sentStatus ->  new AdminCreateUserResponse(
+                                        ctx.userId,
+                                        ctx.username,
+                                        ctx.tempPassword,
+                                        invitationLink,
+                                        sentStatus
+                                ));
+                    }
+
+                    return Mono.just(new AdminCreateUserResponse(
+                            ctx.userId,
+                            ctx.username,
+                            ctx.tempPassword,
+                            invitationLink,
+                            false
+                    ));
+                });
+    }
+
+
+
+    private String getFriendlyGroupName(String groupPath){
+        GroupPath group = GroupPath.fromPath(groupPath);
+        return (group != null) ? group.getDisplayName(): "our community";
+    }
+
     private String generateUsername(String firstName, String lastName) {
         // Normalize Unicode characters (é → e, ç → c)
         String normalizedFirstName = normalizeUnicode(firstName.toLowerCase());
         String normalizedLastName = normalizeUnicode(lastName.toLowerCase());
 
-        String base = normalizedFirstName + "." + normalizedLastName;
+        String base = "%s.%s".formatted(normalizedFirstName, normalizedLastName);
 
         // Remove any remaining invalid characters
         String cleaned = base.replaceAll("[^a-z0-9._]", "");
@@ -227,16 +418,13 @@ public class AdminUserServiceImpl implements AdminUserService {
         List<RequiredAction> actions = new ArrayList<>();
 
         actions.add(RequiredAction.VERIFY_EMAIL);
-        actions.add(RequiredAction.UPDATE_PASSWORD);
 
-        if(group == GroupPath.MODERATORS_PROFESSIONAL){
-            actions.add(RequiredAction.UPDATE_PROFILE);
-        }
-
-        if(group == GroupPath.ADMINISTRATORS){
-            actions.add(RequiredAction.CONFIGURE_TOTP);
-        }
+//        if(group == GroupPath.ADMINISTRATORS){
+//            actions.add(RequiredAction.CONFIGURE_TOTP);
+//        }
 
         return actions.stream().map(Enum::name).toList();
     }
+
+
 }

@@ -26,7 +26,7 @@ public class PaginationUtils {
 
             log.error("Invalid pagination parameters: page={}, size={}", page, size);
 
-            throw new InvalidPaginationException("Invalid pagination parameters: page >= 0 and size > 0 required.");
+            throw new InvalidPaginationException();
         }
 
         int firstResult = page * size;
@@ -44,7 +44,7 @@ public class PaginationUtils {
                             .collectList()  // Collect the results into a List
                             .map(content -> {
                                 // Return PaginatedResponse with the mapped list
-                                return new PaginatedResponse<>(content, page, size, totalElements, totalPages, isLastPage);
+                                return new PaginatedResponse<>(content, page, size, totalElements);
                             });
                 });
     }

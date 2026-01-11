@@ -1,13 +1,20 @@
 package com.mentalhealthforum.mentalhealthforum_backend.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import com.mentalhealthforum.mentalhealthforum_backend.service.PrivilegedUser;
 //import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
+import com.mentalhealthforum.mentalhealthforum_backend.service.OnboardingProfileData;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.ValidEmail;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.bio.ValidBio;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.displayName.ValidDisplayName;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.firstName.ValidFirstName;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.lastName.ValidLastName;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.url.ValidUrl;
+import com.mentalhealthforum.mentalhealthforum_backend.validation.username.ValidUsername;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,7 +45,7 @@ import java.util.UUID;
 @Setter
 @Getter
 @Table("app_users")
-public class AppUser implements PrivilegedUser {
+public class AppUser implements PrivilegedUser, OnboardingProfileData {
 
     @Id
     @Column("id")
@@ -51,21 +58,20 @@ public class AppUser implements PrivilegedUser {
     private UUID keycloakId; // External identifier provided by Keycloak
 
     // --- Authoritative Keycloak-synced identity fields ---
-    @Email
     @Column("email")
-    @NotBlank
+    @ValidEmail
     private String email;
 
     @Column("username")
-    @NotBlank
+    @ValidUsername
     private String username;
 
     @Column("first_name")
-    @NotBlank
+    @ValidFirstName
     private String firstName;
 
     @Column("last_name")
-    @NotBlank
+    @ValidLastName
     private String lastName;
 
     // --- Cached/display-only fields (Postgres-compatible storage: text[] or jsonb) ---
@@ -88,13 +94,15 @@ public class AppUser implements PrivilegedUser {
     // --- Application-specific profile data (Source of Truth is our database) ---
 
     @Column("display_name")
-    @Size(max = 100)
+    @ValidDisplayName
     private String displayName; // Optional public-facing alias; can be included in token
 
     @Column("avatar_url")
+    @ValidUrl
     private String avatarUrl; // Default handled via constant/config; can be null
 
     @Column("bio")
+    @ValidBio
     private String bio;
 
     @Column("timezone")
@@ -137,11 +145,29 @@ public class AppUser implements PrivilegedUser {
     @Transient
     private boolean isSelf = false;
 
+    @Transient
+    private String pendingEmail;
+
+    @Transient
+    public String getInitials(){
+
+        if (this.firstName != null && this.lastName != null &&
+                !this.firstName.isBlank() && !this.lastName.isBlank()) {
+            return (firstName.charAt(0) + "" + lastName.charAt(0)).toUpperCase();
+        }
+
+        if (this.username != null && !this.username.isBlank()) {
+            return String.valueOf(username.charAt(0)).toUpperCase();
+        }
+
+        return "??";
+    }
+
     // --- Constructors ---
 
     public AppUser() {
         this.dateJoined = Instant.now();
-        this.bio = "Hi, I'm here to connect, learn and grow. Let's support each other!";
+        //this.bio = "Hi, I'm here to connect, learn and grow. Let's support each other!";
     }
 
     /**
@@ -171,26 +197,6 @@ public class AppUser implements PrivilegedUser {
         this.lastName = lastName;
     }
 
-    public String getDisplayName(){
-        if (this.displayName != null && !this.displayName.trim().isEmpty()) {
-            return this.displayName;
-        }
-
-        if (this.firstName != null && this.lastName != null &&
-                !this.firstName.trim().isEmpty() && !this.lastName.trim().isEmpty()) {
-            return (firstName.charAt(0) + "" + lastName.charAt(0)).toUpperCase();
-        }
-
-        if (this.firstName != null && !this.firstName.trim().isEmpty()) {
-            return String.valueOf(firstName.charAt(0)).toUpperCase();
-        }
-
-        if (this.username != null && !this.username.trim().isEmpty()) {
-            return String.valueOf(username.charAt(0)).toUpperCase();
-        }
-
-        return "Anonymous";
-    }
 
     // --- NotificationPreferences getter/setter using JsonUtils ---
     public NotificationPreferences getNotificationPreferences() {
@@ -204,5 +210,25 @@ public class AppUser implements PrivilegedUser {
         this.notificationPreferencesJson = JsonUtils.objectToJsonNode(
                 prefs == null ? new NotificationPreferences() : prefs
         );
+    }
+
+    @Override
+    public String displayName() {
+        return this.displayName;
+    }
+
+    @Override
+    public String bio() {
+        return this.bio;
+    }
+
+    @Override
+    public String timezone() {
+        return this.timezone;
+    }
+
+    @Override
+    public SupportRole supportRole() {
+        return this.supportRole;
     }
 }

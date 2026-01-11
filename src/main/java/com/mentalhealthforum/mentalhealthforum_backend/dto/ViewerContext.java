@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto;
 
+import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.service.PrivilegedUser;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import lombok.Getter;
@@ -44,5 +45,14 @@ public class ViewerContext implements PrivilegedUser {
         this.fullName = fullName;
         this.roles = roles != null ? Set.copyOf(roles) : Set.of(); // Defensive copy
         this.groups = groups != null ? Set.copyOf(groups) : Set.of(); // Defensive copy
+    }
+
+    public boolean hasInternalRole(InternalRole role){
+        Set<String> roles = getRoles();
+        return roles != null && roles.contains(role.getRoleName());
+    }
+
+    public boolean isOnboarding(){
+        return hasInternalRole(InternalRole.ONBOARDING);
     }
 }

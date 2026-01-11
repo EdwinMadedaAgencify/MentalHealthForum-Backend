@@ -1,17 +1,17 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.ForgotPasswordInitRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.ForgotPasswordRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.SecureCookieUtils;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 
@@ -20,10 +20,12 @@ import reactor.core.publisher.Mono;
 public class AuthController {
 
     private final AuthService authService;
+    private final UserService userService;
     private final SecureCookieUtils cookieUtils;
 
-    public AuthController(AuthService authService, SecureCookieUtils cookieUtils) {
+    public AuthController(AuthService authService, UserService userService, SecureCookieUtils cookieUtils) {
         this.authService = authService;
+        this.userService = userService;
         this.cookieUtils = cookieUtils;
     }
 
@@ -99,5 +101,17 @@ public class AuthController {
                                 "Logout successful."
                         )
                 ));
+    }
+
+    @PostMapping("/forgot-password/initiate")
+    public Mono<ResponseEntity<StandardSuccessResponse<Object>>> initiateForgotPassword(@Valid @RequestBody ForgotPasswordInitRequest request){
+        return userService.initiateForgotPassword(request.email())
+                .thenReturn(ResponseEntity.ok(new StandardSuccessResponse<>("If an account exists, a reset code has been sent.")));
+    }
+
+    @PostMapping("/forgot-password/complete")
+    public Mono<ResponseEntity<StandardSuccessResponse<Object>>> completeForgotPassword(@Valid @RequestBody ForgotPasswordRequest request){
+        return userService.completeForgotPassword(request)
+                .thenReturn(ResponseEntity.ok(new StandardSuccessResponse<>("Password reset successfully")));
     }
 }

@@ -34,8 +34,10 @@ dependencies {
     implementation("org.keycloak:keycloak-admin-client:26.0.7")
     implementation("org.springdoc:springdoc-openapi-starter-webflux-ui:2.8.14")
 
+
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
+
 
 
 	testImplementation("org.springframework.boot:spring-boot-starter-test")

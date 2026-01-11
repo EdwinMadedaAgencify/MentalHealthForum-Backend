@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/resources")
+@PreAuthorize("!hasRole('ONBOARDING')")
 public class ResourceController {
 
     /**

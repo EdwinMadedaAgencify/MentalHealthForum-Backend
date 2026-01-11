@@ -19,6 +19,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/secure")
+@PreAuthorize("!hasRole('ONBOARDING')")
 public class SecuredController {
 
     /**`
@@ -33,14 +34,14 @@ public class SecuredController {
         String username = jwt.getClaimAsString("preferred_username");
 
         // The custom roles are usually available under the 'roles' claim
-        List<String> roles = jwt.getClaimAsStringList("roles");
+        List<String> roles = jwt.getClaimAsStringList("realm_access");
         if (roles == null) {
             roles = List.of();
         }
 
         return Mono.just(Map.of(
                 "message", "Access granted via Cookie or Bearer Header!",
-                "userId", userId,
+                "email", userId,
                 "username", username,
                 "roles", roles
         ));

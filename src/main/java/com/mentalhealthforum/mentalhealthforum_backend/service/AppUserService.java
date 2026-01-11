@@ -63,7 +63,20 @@ public interface AppUserService {
      * @param search           Optional search term
      * @return Mono of a paginated response containing user profile data with privacy rules applied.
      */
-    Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(ViewerContext viewerContext, int page, int size, boolean currentUserFirst, Boolean isActive, String role, String[] groups, String sortBy, String sortDirection, String search);
+    Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(
+            ViewerContext viewerContext,
+            int page,
+            int size,
+            boolean currentUserFirst,
+            Boolean isActive,
+            String role,
+            String[] groups,
+            String sortBy,
+            String sortDirection,
+            String search
+    );
+
+    Mono<Void> updateLocalEmail(String userId, String newEmail);
 
     /**
      * Updates the locally stored user profile (e.g., display name, bio, avatar).
@@ -76,7 +89,7 @@ public interface AppUserService {
      * @return Mono of the updated user profile response.
      * @throws InsufficientPermissionException if viewer is not updating their own profile
      */
-    Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserProfileRequest updateUserProfileRequest);
+    Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserOnboardingProfileRequest updateUserProfileRequest);
 
     /**
      * Deletes the local user profile from the R2DBC database for a given Keycloak ID.

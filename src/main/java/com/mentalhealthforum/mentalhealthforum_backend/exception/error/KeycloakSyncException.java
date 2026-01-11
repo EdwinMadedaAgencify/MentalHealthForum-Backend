@@ -11,8 +11,4 @@ public class KeycloakSyncException extends ApiException{
     public KeycloakSyncException(String message, Throwable cause){
         super(message, ErrorCode.KEYCLOAK_SYNC_FAILED, cause);
     }
-
-    public KeycloakSyncException(String message, ErrorCode errorCode, Throwable cause) {
-        super(message, errorCode, cause);
-    }
 }

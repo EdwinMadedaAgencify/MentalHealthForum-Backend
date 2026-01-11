@@ -16,7 +16,7 @@ import java.util.Set;
  *
  * <p>Extracts:
  * <ul>
- *   <li>Basic identity: userId, email, username, names, lastName</li>
+ *   <li>Basic identity: email, email, username, names, lastName</li>
  *   <li>Privileges: roles from 'realm_access.roles' claim</li>
  *   <li>Groups: from 'groups' claim</li>
  * </ul>

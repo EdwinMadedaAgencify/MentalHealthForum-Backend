@@ -1,6 +1,5 @@
 package com.mentalhealthforum.mentalhealthforum_backend.enums;
 
-import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.Getter;
 
 import java.util.Arrays;
@@ -30,6 +29,10 @@ public enum GroupPath {
         this.description = description;
     }
 
+    public String getDisplayName(){
+        return this.description;
+    }
+
     public static GroupPath fromPath(String path){
         for(GroupPath group: values()){
             if(group.path.equals(path)){
@@ -38,6 +41,23 @@ public enum GroupPath {
         }
         return null;
     }
+
+    /**
+     * Determines if a group can be manually assigned/changed by an Admin.
+     * Excludes reputation-based groups (Active, Trusted) and high-level
+     * system roles (Administrators) to prevent escalation.
+     */
+    public boolean isManuallyAssignable(){
+        return switch(this){
+            case MEMBERS_NEW,
+                 MODERATORS_PEER,
+                 MODERATORS_PROFESSIONAL -> true;
+            // System handles these (ACTIVE, TRUSTED)
+            // OR higher security handles these (ADMINISTRATORS)
+            default -> false;
+        };
+    }
+
 
     public static boolean isInGroup(String userGroupPath, GroupPath targetGroup){
         if(userGroupPath == null || targetGroup == null) return false;

@@ -1,9 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.service.AdminUserService;
-import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
-import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
+import com.mentalhealthforum.mentalhealthforum_backend.service.*;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,9 +16,10 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/users/admin")
+@RequestMapping("/api/admin/users")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminUserController {
 
@@ -26,11 +27,17 @@ public class AdminUserController {
 
     private final AdminUserService adminUserService;
     private final AppUserService appUserService;
+    private final AdminInvitationService adminInvitationService;
     private final JwtClaimsExtractor jwtClaimsExtractor;
 
-    public AdminUserController(AdminUserService adminUserService, AppUserService appUserService, JwtClaimsExtractor jwtClaimsExtractor) {
+    public AdminUserController(
+            AdminUserService adminUserService,
+            AppUserService appUserService,
+            AdminInvitationService adminInvitationService,
+            JwtClaimsExtractor jwtClaimsExtractor) {
         this.adminUserService = adminUserService;
         this.appUserService = appUserService;
+        this.adminInvitationService = adminInvitationService;
         this.jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
@@ -56,13 +63,15 @@ public class AdminUserController {
 
         log.info("Admin creating user: email = {}, group = {}", request.email(), request.group().getPath());
 
-        return adminUserService.createUserAsAdmin(request)
+        ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
+
+        return adminUserService.createUserAsAdmin(request, viewerContext)
                 .map(response -> {
                     // Build success response
-                    String message = "User created successfully. " +
-                            (request.sendInvitationEmail() ?
-                                    "Invitation email sent." :
-                                    "Provide temporary credentials to user manually.");
+                    String message = "User created successfully. %s".formatted(response.emailSent() ?
+                            "Invitation email sent." :
+                            request.sendInvitationEmail() ? "Email failed to send." : "."
+                                    + "Provide temporary credentials to user manually.");
 
                     StandardSuccessResponse<AdminCreateUserResponse> successResponse =
                             new StandardSuccessResponse<>(message, response);
@@ -72,23 +81,75 @@ public class AdminUserController {
                 });
     }
 
+    @PostMapping("/{userId}/reissue-invite")
+    public Mono<ResponseEntity<StandardSuccessResponse<AdminCreateUserResponse>>> reissueInvitation(
+            @PathVariable UUID userId,
+            @Valid @RequestBody ReissueInvitationRequest reissueInvitationRequest){
+        return adminUserService.reissueAdminInvitation(String.valueOf(userId), reissueInvitationRequest)
+                .map( response -> {
+                    String message = "Invitation reissued successfully. %s".formatted(response.emailSent() ?
+                            "Invitation email sent." :
+                            reissueInvitationRequest.sendInvitationEmail() ? "Email failed to send." : "."
+                                    + "Provide temporary credentials to user manually.");
+
+                    StandardSuccessResponse<AdminCreateUserResponse> successResponse =
+                            new StandardSuccessResponse<>(message, response);
+
+                    return ResponseEntity.ok(successResponse);
+                });
+    }
+
+    @GetMapping("/pending-invites")
+    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<PendingAdminInviteDto>>>> getPendingInvites(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String[] groups,
+            @RequestParam(required = false, name = "invited_by_user_id")
+            @Parameter(name = "invited_by_user_id")
+            UUID invitedByUserId,
+            @RequestParam(defaultValue = "date_created", name = "sort_by")
+            @Parameter(name = "sort_by", description = "Field to sort by: username, email, date_created")
+            String sortBy,
+            @RequestParam(required = false, name = "sort_direction")
+            @Parameter(name = "sort_direction", description = "Sort direction: asc or desc")
+            String sortDirection,
+            @RequestParam(required = false, name = "onboarding_stage")
+            @Parameter(description = "Filter by stage: AWAITING_VERIFICATION, AWAITING_PASSWORD_RESET, AWAITING_PROFILE_COMPLETION")
+            OnboardingStage onboardingStage,
+            @RequestParam(required = false, name = "search")
+            @Parameter(name = "search")
+            String search){
+
+        return  adminInvitationService.getPendingInvites(page, size, groups, invitedByUserId, sortBy, sortDirection, search, onboardingStage)
+                .map(paginated -> ResponseEntity.ok(
+                        new StandardSuccessResponse<>("Pending invitations retrieved.", paginated)
+                ));
+    }
+
     @PostMapping("/{userId}")
     public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> updateUserAsAdmin(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String userId,
+            @PathVariable UUID userId,
             @Valid @RequestBody AdminUpdateUserRequest adminUpdateUserRequest){
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-
-        return adminUserService.updateUserAsAdmin(userId, adminUpdateUserRequest)
-                // ADD DELAY to allow Keycloak to propagate role changes
-                .delayElement(Duration.ofMillis(500))
-                .flatMap(keycloakUserDto -> appUserService.syncUserViaAdminClient(keycloakUserDto, viewerContext))
-                .then(appUserService.getAppUserWithContext(userId, viewerContext))
+        return adminUserService.updateUserAsAdmin(String.valueOf(userId), adminUpdateUserRequest)
+                .flatMap(keycloakUserDto -> appUserService.syncUserViaAdminClient(keycloakUserDto, viewerContext)
                 .map(user -> {
                     String message = "User details updated successfully";
                     StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, user);
                     return ResponseEntity.ok(response);
-                });
+                }));
+    }
+
+    @DeleteMapping("/invites/{userId}")
+    public Mono<ResponseEntity<StandardSuccessResponse<Void>>> revokeInvitation(
+            @PathVariable UUID userId){
+            log.info("Admin revoking invitation for user ID: {}", userId);
+
+            return adminUserService.revokeInvitation(String.valueOf(userId))
+                    .thenReturn(ResponseEntity.ok(
+                            new StandardSuccessResponse<>("Invitation revoked and user deleted successfully.", null)
+                    ));
     }
 }

@@ -1,6 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
+import com.mentalhealthforum.mentalhealthforum_backend.model.PendingUser;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -19,7 +20,9 @@ public interface UserService {
      * @param registerUserRequest The registration details.
      * @return Mono of the created user's ID.
      */
-    Mono<String> registerUser(RegisterUserRequest registerUserRequest);
+    Mono<String> createUserInStaging(RegisterUserRequest registerUserRequest);
+
+    Mono<KeycloakUserDto> createUserInKeycloak(PendingUser pendingUser, String groupPath);
 
     /**
      * Retrieves a user's details by their ID.
@@ -36,6 +39,8 @@ public interface UserService {
      */
     Mono<List<KeycloakUserDto>> getAllUsers();
 
+
+
     /**
      * Updates an existing user's profile.
      * Errors (UserExistsException, UserDoesNotExistException) are signaled via Mono.error().
@@ -44,8 +49,12 @@ public interface UserService {
      * @param updateUserProfileRequest The update details.
      * @return Mono of the updated KeycloakUserDto.
      */
-    Mono<KeycloakUserDto> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest);
+    Mono<ProfileUpdateResult> updateUserProfile(String userId, UpdateUserOnboardingProfileRequest updateUserProfileRequest);
 
+
+    Mono<Void> initiateForgotPassword(String email);
+
+    Mono<Void> completeForgotPassword(ForgotPasswordRequest request);
 
     /**
      * Resets a user's password.

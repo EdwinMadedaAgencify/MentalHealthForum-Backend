@@ -15,12 +15,12 @@ public class PaginatedResponse<T>{
     private int totalPages;
     private boolean  isLastPage;
 
-    public PaginatedResponse(List<T> content, int page, int size, long totalElements, int totalPages, boolean isLastPage) {
+    public PaginatedResponse(List<T> content, int page, int size, long totalElements) {
         this.content = content;
         this.page = page;
         this.size = size;
         this.totalElements = totalElements;
-        this.totalPages = totalPages;
-        this.isLastPage = isLastPage;
+        this.totalPages = (totalElements == 0) ? 0 : (int) Math.ceil((double) totalElements / size);
+        this.isLastPage = page >= totalPages - 1;
     }
 }

@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -170,6 +171,16 @@ public class GlobalExceptionHandler {
                 // Other decoding problems
                 detail = new ErrorDetail("body", decodingException.getMessage());
             }
+        }
+        else if(cause instanceof org.springframework.beans.TypeMismatchException typeMismatchException){
+            String fieldName = ex.getMethodParameter() != null? ex.getMethodParameter().getParameterName(): "parameter";
+
+            String message = String.format("Invalid value %s for parameter %s", typeMismatchException.getValue(), fieldName);
+
+            if(typeMismatchException.getRequiredType() != null && typeMismatchException.getRequiredType().isEnum()){
+                message += " Expected one of: " + Arrays.toString(typeMismatchException.getRequiredType().getEnumConstants());
+            }
+            detail = new ErrorDetail(fieldName, message);
         }
         else {
             // Fallback for other ServerWebInputException causes

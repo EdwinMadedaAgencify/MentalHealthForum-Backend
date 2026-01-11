@@ -44,8 +44,8 @@ public class UserResponseMapper {
      */
     public UserResponse toPublicUserResponse(AppUser targetUser){
         // Map ONLY always-public fields
-        return new UserResponse(
-                targetUser.getKeycloakId(),  // Using keycloakId as userId in response
+        UserResponse userResponse = new UserResponse(
+                targetUser.getKeycloakId(),  // Using keycloakId as email in response
                 targetUser.getDateJoined(),
                false,
                 targetUser.getDisplayName(),
@@ -57,6 +57,9 @@ public class UserResponseMapper {
                 targetUser.getRoles(),
                 targetUser.getGroups()
         );
+
+        userResponse.setInitials(targetUser.getInitials());
+        return userResponse;
     }
 
     /**
@@ -79,6 +82,8 @@ public class UserResponseMapper {
         response.setBio(targetUser.getBio());
         response.setTimezone(targetUser.getTimezone());
         response.setLanguage(targetUser.getLanguage());
+
+        response.setPendingEmail(targetUser.getPendingEmail());
 
         // Override profile visibility for admins/moderators - they cannot be anonymous
         // This ensures transparency even if they set PRIVATE in database
@@ -110,6 +115,7 @@ public class UserResponseMapper {
         // Always clear sensitive fields
         response.setUsername(null);
         response.setEmail(null);
+        response.setPendingEmail(null);
         response.setNotificationPreferences(null);
 
         // Check viewer privileges

@@ -12,6 +12,10 @@ spring:
           issuer-uri: http://localhost:9080/realms/mentalhealthforum
           principal-claim-name: preferred_username
 
+    encryption:
+      # Use a 16, 24, or 32 character key for AES
+      key: ${ENCRYPTION_KEY:mY_ENCRYPT_KEY16}
+
   # ----------------------------------------------------------------------
   # R2DBC Database Configuration (MOVED & FIXED INDENTATION)
   # ----------------------------------------------------------------------
@@ -40,6 +44,9 @@ novu:
   base-url: http://localhost:3000/v1
   app-identifier: YIZ_AuFIOVH7
 
+frontend:
+  base-url: http://localhost:3001
+
 logging:
   level:
     org.springframework.security: INFO
@@ -47,6 +54,10 @@ logging:
 
     # R2DBC Logging
     io.r2dbc: DEBUG
+
+    io.r2dbc.postgresql: DEBUG
+    io.r2dbc.postgresql.PARAM: TRACE # This reveals the actual values being bound
+
     org.springframework.data.r2dbc: DEBUG
     org.springframework.jdbc.core: DEBUG
 

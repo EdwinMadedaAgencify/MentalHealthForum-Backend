@@ -1,8 +1,11 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
+import com.mentalhealthforum.mentalhealthforum_backend.contants.KeycloakAttributes;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.RequiredAction;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidGroupAssignmentException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPasswordException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
@@ -47,8 +50,8 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
 
 
     private final KeycloakProperties keycloakProperties;
-    private Keycloak keycloak;
 
+    private Keycloak keycloak;
     private final Map<String, String> groupCache = new ConcurrentHashMap<>();
 
     public KeycloakAdminManagerImpl(KeycloakProperties keycloakProperties) {
@@ -149,7 +152,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
 
     @Override
     public void resetPassword(String userId, String newPassword) throws InvalidPasswordException {
-        CredentialRepresentation passwordCred = createPasswordCredential(newPassword, false);
+        CredentialRepresentation passwordCred = createPasswordCredential(newPassword);
         UserResource userResource = getUsersResource().get(userId);
 
         try {
@@ -218,6 +221,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
             List<String> validDirectRoles = directRoles.stream()
                     .map(RoleRepresentation::getName)
                     .filter(role -> !RealmRole.isValidRole(role))
+                    .filter(role -> role.equals(InternalRole.ONBOARDING.getRoleName()))
                     .toList();
 
             allRoles.addAll(validDirectRoles);
@@ -245,13 +249,76 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     }
 
     @Override
+    public void assignInternalRole(String userId, InternalRole internalRole){
+        String roleName = internalRole.getRoleName();
+        String roleDescription = internalRole.getDescription();
+        try {
+            // Check if role exists. If not, create it.
+            createRoleIfNotExists(roleName, roleDescription);
+
+            // Get the Role Representation from the Realm
+            RoleRepresentation limitedRole = getRealmResource()
+                    .roles()
+                    .get(roleName)
+                    .toRepresentation();
+
+            // Assign to the user
+            getUsersResource().get(userId)
+                    .roles()
+                    .realmLevel()
+                    .add(Collections.singletonList(limitedRole));
+            log.info("Successfully assigned {} role to user {}", roleName, userId);
+        } catch (jakarta.ws.rs.NotFoundException e) {
+            log.error("Failed to assign internal role {} to user {}", roleName, userId, e);
+        }
+    }
+
+    @Override
+    public void removeInternalRole(String userId, InternalRole internalRole){
+        String roleName = internalRole.getRoleName();
+        try {
+            UserResource userResource = getUsersResource().get(userId);
+
+            // Find the specific role among user's current realm roles
+            List<RoleRepresentation> currentRoles = userResource.roles().realmLevel().listAll();
+
+            Optional<RoleRepresentation> limitedRole = currentRoles.stream()
+                    .filter(role -> roleName.equals(role.getName()))
+                    .findFirst();
+
+            if(limitedRole.isPresent()){
+                userResource.roles().realmLevel().remove(Collections.singletonList(limitedRole.get()));
+                log.info("Successfully removed {} role from user {}", roleName, userId);
+            }
+        } catch(Exception e) {
+            log.error("Failed to remove {} role from user {}", roleName, userId, e);
+        }
+
+    }
+
+    private void createRoleIfNotExists(String roleName, String description){
+        try {
+            getRealmResource().roles().get(roleName).toRepresentation();
+        } catch (jakarta.ws.rs.NotFoundException e){
+            log.info("Role {} not found. Creating it on the fly...", roleName);
+            RoleRepresentation newRole = new RoleRepresentation();
+            newRole.setName(roleName);
+            newRole.setDescription(description);
+            getRealmResource().roles().create(newRole);
+
+        }
+    }
+
+
+
+
+
+    @Override
     public void assignUserToGroup(String userId, GroupPath group) {
 
         // Validate group is assignable
         if(!group.isAssignable()){
-            throw new InvalidGroupAssignmentException(
-                    String.format("Group %s is not assignable. Only leaf groups with role grants can be assigned.", group)
-            );
+            throw new InvalidGroupAssignmentException(group);
         }
 
         try{
@@ -276,7 +343,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
                     groupCache.put(group.getPath(), groupId);
                 }
                 else {
-                    throw new RuntimeException("Group not found: " + group.getPath());
+                    throw new InvalidGroupAssignmentException("Group not found: %s".formatted(group.getPath()));
                 }
             }
 
@@ -285,7 +352,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
             log.info("Assigned user {} to group {}", userId, group.getPath());
         } catch (Exception e){
             log.error("Failed to assign user {} to group {}", userId, group.getPath(), e);
-            throw new RuntimeException("Failed to assign user to group.", e);
+            throw new InvalidGroupAssignmentException("Failed to assign user to group.", e);
         }
     }
 
@@ -328,6 +395,26 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     }
 
     @Override
+    public String getUserPrimaryGroupPath(String userId){
+        try{
+           List<GroupRepresentation> groups = getUsersResource().get(userId).groups();
+           if(groups.isEmpty()){
+               // Fallback to a default if no group is found
+               // though for an invited user, this shouldn't happen.
+               log.warn("User {} has no groups assigned. Falling back to default.", userId);
+               return GroupPath.MEMBERS_NEW.getPath();
+           }
+
+            // We return the path of the first group found.
+            // In our system, the admin typically assigns exactly one.
+            return groups.getFirst().getPath();
+        } catch(Exception e){
+            log.error("Failed to fetch primary group for user {}", userId, e);
+            return GroupPath.MEMBERS_NEW.getPath();
+        }
+    }
+
+    @Override
     public List<String> getUserGroups(String userId){
         try {
             return getUsersResource().get(userId)
@@ -356,7 +443,71 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
     }
 
     @Override
-    public CredentialRepresentation createPasswordCredential(String password, boolean isTemporary) throws InvalidPasswordException {
+    public void setUserAttribute(String userId, String key, String value){
+        UserResource userResource = getUsersResource().get(userId);
+        UserRepresentation userRep = userResource.toRepresentation();
+
+        Map<String, List<String>> attributes = userRep.getAttributes();
+        if(attributes == null){
+            attributes = new HashMap<>();
+        }
+
+        // Keycloak attributes are always Lists of Strings
+        attributes.put(key, Collections.singletonList(value));
+        userRep.setAttributes(attributes);
+
+        userResource.update(userRep);
+        log.info("Updated attribute '{}' to '{} for user {}'", key, value, userId);
+    }
+
+
+    @Override
+    public Optional<String> getUserAttribute(String userId, String key){
+        UserRepresentation userRep = getUsersResource().get(userId).toRepresentation();
+
+        Map<String, List<String>> attributes = userRep.getAttributes();
+        if(attributes == null){
+           return Optional.empty();
+        }
+        List<String> values = attributes.get(key);
+        return (values != null && !values.isEmpty())
+                ? Optional.of(values.getFirst())
+                : Optional.empty();
+    }
+
+
+    @Override
+    public void markAsSyncedLocally(String userId, boolean sync){
+        setUserAttribute(userId, KeycloakAttributes.IS_SYNCED_LOCALLY, sync? "true": "false");
+    }
+
+    @Override
+    public boolean isSyncedLocally(String userId){
+        return getUserAttribute(userId, KeycloakAttributes.IS_SYNCED_LOCALLY)
+                .map(Boolean::parseBoolean)
+                .orElse(false);
+    }
+
+    @Override
+    public List<UserRepresentation> findUnsyncedUsers(){
+        return getUsersResource().searchByAttributes(String.format("%s:false", KeycloakAttributes.IS_SYNCED_LOCALLY));
+    }
+
+    @Override
+    public void verifyUserEmail(String email) {
+        findUserByEmail(email).ifPresent(userRep -> {
+            userRep.setEmailVerified(true);
+            // Also remove 'VERIFY_EMAIL' from required actions if it exists
+            if(userRep.getRequiredActions() != null){
+                userRep.getRequiredActions().remove(RequiredAction.VERIFY_EMAIL.name());
+            }
+            updateUser(userRep);
+            log.info("Successfully marked email {} as verified in Keycloak", email);
+        });
+    }
+
+    @Override
+    public CredentialRepresentation createPasswordCredential(String password) throws InvalidPasswordException {
         if (password == null || password.length() < 8) {
             throw new InvalidPasswordException("Password must be at least 8 characters long.");
         }
@@ -368,7 +519,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         }
 
         CredentialRepresentation passwordCred = new CredentialRepresentation();
-        passwordCred.setTemporary(isTemporary);
+        passwordCred.setTemporary(false);
         passwordCred.setType(CredentialRepresentation.PASSWORD);
         passwordCred.setValue(password);
         return passwordCred;

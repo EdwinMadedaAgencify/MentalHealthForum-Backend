@@ -11,13 +11,13 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-@Target(ElementType.FIELD)
+@Target({ElementType.FIELD, ElementType.CONSTRUCTOR})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = {})
 @Size(max = 100, message = "Email cannot exceed 100 characters.")
-@Email(message = "Email must be a valid email format.")
+//@Email(message = "Email must be a valid email format.")
 // Additional pattern for stricter validation
-@Pattern(regexp = "^[\\w.%+-]+@[\\w.-]+\\.[A-Za-z]{2,}$",
+@Pattern(regexp = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
         message = "Email must be a valid email format.")
 public @interface ValidEmail {
     String message() default "Invalid email";

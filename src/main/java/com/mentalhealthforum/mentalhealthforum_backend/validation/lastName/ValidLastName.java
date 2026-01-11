@@ -10,14 +10,14 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-@Target({ElementType.FIELD})
+@Target({ElementType.FIELD,  ElementType.CONSTRUCTOR})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = {}) // No custom validator needed yet
 @Size(max = 50, message = "Last name cannot exceed 50 characters.")
 @Pattern(regexp = "^\\p{L}[\\p{L} '.-]*\\p{L}?$",
         message = "Last name can only contain letters, spaces, apostrophes, dots, and hyphens, and must start with a letter")
 public @interface ValidLastName {
-    String message() default "Invalid first name";
+    String message() default "Invalid last name";
     Class<?>[] groups() default {};
     Class<? extends Payload>[] payload() default {};
 }

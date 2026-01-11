@@ -1,54 +1,33 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.config.NovuProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.NovuSubscriberRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.NovuWorkflow;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-public class NovuService {
+public interface NovuService {
+    /**
+     * Dispatches a notification via the Novu trigger system.
+     * * @param workflow The specific notification event to trigger.
+     *
+     * @param email The unique identifier of the recipient (usually email).
+     * @param payload      The type-safe data required by the specific workflow.
+     * @return boolean
+     */
+    <T extends NovuPayload> Mono<Boolean> triggerEvent(
+            NovuWorkflow workflow,
+            String subscriberId,
+            String email,
+            T payload
+    );
 
-    private static final Logger log = LoggerFactory.getLogger(NovuService.class);
-    private final WebClient webClient;
+    /**
+     * Creates or updates a subscriber's profile information in Novu.
+     */
+    Mono<Void> upsertSubscriber(AppUser appUser);
 
-    public NovuService(
-            WebClient.Builder webClientBuilder,
-            NovuProperties novuProperties) {
-        this.webClient = webClientBuilder
-                .baseUrl(novuProperties.getBaseUrl())
-                .defaultHeader("Authorization", "ApiKey " + novuProperties.getApiKey())
-                .build();
-    }
-
-    public Mono<Void> upsertSubscriber(AppUser appUser){
-        // Create the record
-        var request = new NovuSubscriberRequest(
-                appUser.getKeycloakId().toString(),
-                appUser.getFirstName(),
-                appUser.getLastName(),
-                appUser.getEmail(),
-                appUser.getAvatarUrl(),
-                appUser.getLanguage(),
-                null // Meta-data can be included here if needed
-        );
-
-        return webClient.post()
-                .uri("/v1/subscribers")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response ->
-                        response.bodyToMono(String.class)
-                                .flatMap(error -> Mono.error(new RuntimeException("Novu sync Error: " + error)))
-                )
-                .toBodilessEntity()
-                .doOnSuccess(v -> log.info("Novu subscriber Synced: {}", appUser.getKeycloakId()))
-                .doOnError(e -> log.error("Novu Sync Failed: {}", e.getMessage()))
-                .onErrorResume(e -> Mono.empty()) // Essential Don't break the user flow
-                .then();
-    }
+    /**
+     * Synchronizes local notification preferences with Novu's settings.
+     */
+    Mono<Void> syncPreferences(String subscriberId, NotificationPreferences prefes);
 }

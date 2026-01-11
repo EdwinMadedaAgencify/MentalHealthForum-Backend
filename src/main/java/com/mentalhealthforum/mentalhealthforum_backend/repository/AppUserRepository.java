@@ -1,6 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.data.repository.query.Param;
@@ -8,12 +10,22 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Reactive Repository for the application's internal AppUser profiles (R2DBC).
  */
 public interface AppUserRepository extends R2dbcRepository<AppUser, String> {
+
     Mono<AppUser> findAppUserByKeycloakId(String keycloakId);
+
+    @Modifying
+    @Query("""
+        UPDATE app_users
+        SET email = :email,
+            WHERE keycloak_id = :keycloakId
+    """)
+   Mono<Void> updateLocalEmail(UUID keycloakId, String email);
 
     @Query("""
             SELECT * FROM app_users

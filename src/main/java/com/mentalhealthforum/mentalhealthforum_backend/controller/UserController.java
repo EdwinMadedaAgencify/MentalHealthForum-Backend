@@ -1,7 +1,10 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.OnboardingPolicyViolationException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
@@ -16,11 +19,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.util.UriComponentsBuilder; // Use standard UriComponentsBuilder
 import reactor.core.publisher.Mono;
 
-import java.net.URI;
+import java.util.UUID;
 
 
 @RestController
@@ -44,50 +45,31 @@ public class UserController {
     // -------------------------------------------------------------------------
 
     @PostMapping("/register")
-    public Mono<ResponseEntity<StandardSuccessResponse<String>>> registerUser(
-            @Valid @RequestBody RegisterUserRequest registerUserRequest,
-            ServerWebExchange exchange) {
+        public Mono<ResponseEntity<StandardSuccessResponse<String>>> registerUser(
+            @Valid @RequestBody RegisterUserRequest registerUserRequest) {
 
-        final URI currentUri = exchange.getRequest().getURI();
-
-        // Step 1: Register the user in Keycloak
-        return userService.registerUser(registerUserRequest)
-                .flatMap(userId -> {
-                    // Step 2: Retrieve user data from Keycloak, Create the local profile and Return the userId
-                    return userService.getUser(userId)
-                            // 3. Create the initial internal application profile
-                            .flatMap(keycloakUserDto -> appUserService.syncUserViaAdminClient(keycloakUserDto, null))
-                            // 4. Discard AppUser result, continue the stream with the original userId
-                            .thenReturn(userId);
-                })
-                .map(userId -> {
-                    // 5. Map the userId into a 201 Created Response
-                    String message = "User registered successfully. Activation required.";
-                    StandardSuccessResponse<String> response = new StandardSuccessResponse<>(message, userId);
-
-                    // 6. Build the Location header URI for the newly created resource
-                    URI location = UriComponentsBuilder.fromUri(currentUri)
-                            .path("/{userId}") // Appends "/{userId}"
-                            .buildAndExpand(userId) // Inserts the newly generated userId
-                            .toUri(); // Finalizes the URI object
-
-                    return ResponseEntity.created(location).body(response);
+        return userService.createUserInStaging(registerUserRequest)
+                .map(email -> {
+                    String message = "Registration request accepted. Please check your email to complete activation.";
+                    return ResponseEntity.accepted().body(
+                            new StandardSuccessResponse<>(message, email)
+                    );
                 });
     }
 
     @GetMapping("/{userId}")
     public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> getUser(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String userId
+            @PathVariable UUID userId
     ) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
-        Mono<Void> syncMono = userService.getUser(userId)
+        Mono<Void> syncMono = userService.getUser(String.valueOf(userId))
                 .flatMap(keycloakUserDto -> appUserService.syncUserViaAdminClient(keycloakUserDto, viewerContext))
                 .then();
 
         return syncMono
-                .then(appUserService.getAppUserWithContext(userId, viewerContext))
+                .then(appUserService.getAppUserWithContext(String.valueOf(userId), viewerContext))
                 .map(user -> {
                     String message = "User details retrieved successfully";
                     StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, user);
@@ -129,41 +111,41 @@ public class UserController {
     @PatchMapping("/{userId}")
     public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> updateUserProfile(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String userId,
-            @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) {
+            @PathVariable UUID userId,
+            @Valid @RequestBody UpdateUserOnboardingProfileRequest updateUserProfileRequest) {
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
         // --- Authorization check ---
-        if(viewerContext == null || !viewerContext.getUserId().equals(userId)){
+        if(viewerContext == null || !viewerContext.getUserId().equals(String.valueOf(userId))){
             throw new InsufficientPermissionException("Forbidden: Cannot update another user's profile.");
         }
 
         // Try Keycloak update first
-        return userService.updateUserProfile(userId, updateUserProfileRequest)
-                .flatMap(keycloakUserDto -> {
+        return Mono.just(updateUserProfileRequest)
+                .flatMap(updateUserOnboardingProfileRequest -> {
+                    OnboardingPolicy.Result result = viewerContext.checkOnboardingPolicy(updateUserOnboardingProfileRequest);
+                    if(!result.isSatisfied()){
+                        return Mono.error(new OnboardingPolicyViolationException(result.violations()));
+                    }
+                   return userService.updateUserProfile(String.valueOf(userId), updateUserProfileRequest);
+                })
+                .flatMap(profileUpdateResult -> {
                     // Keycloak succeeded, now try local DB
-                    return appUserService.updateLocalProfile(userId, viewerContext, updateUserProfileRequest)
-                            .onErrorResume(localError -> {
-                                // Local DB failed, but Keycloak succeeded
-                                log.error("Local DB update failed after Keycloak success: {}", localError.getMessage());
-                                // Return current profile as fallback
-                                return appUserService.getAppUserWithContext(userId, viewerContext);
-                            });
+                    return appUserService.updateLocalProfile(String.valueOf(userId), viewerContext, updateUserProfileRequest);
                 })
                 .map(updatedUser -> {
-                    String message = "User updated successfully.";
+
+                    String message = "Profile updated successfully.";
+                    if (updatedUser.getPendingEmail() != null) {
+                        message = String.format(
+                                "Profile updated. A verification link has been sent to %s. " +
+                                        "Your email will update once verified.",
+                                updateUserProfileRequest.email().toLowerCase()
+                        );
+                    }
+
                     return ResponseEntity.ok(new StandardSuccessResponse<>(message, updatedUser));
-                })
-                .onErrorResume(keycloakError -> {
-                    // Keycloak update failed
-                    log.error("Keycloak update failed: {}", keycloakError.getMessage());
-                    return appUserService.getAppUserWithContext(userId, viewerContext)
-                            .map(currentProfile -> {
-                                String message = "Profile update failed. Please try again later.";
-                                StandardSuccessResponse<UserResponse> response = new StandardSuccessResponse<>(message, currentProfile);
-                                return ResponseEntity.status(500).body(response);
-                            });
                 });
     }
 
@@ -184,7 +166,7 @@ public class UserController {
         // userService.resetPassword returns Mono<Void>. We use then() to wait for completion.
         return userService.resetPassword(userId, resetPasswordRequest)
                 .then(Mono.fromCallable(() -> {
-                    String message = "AppUser reset password successfully.";
+                    String message = "Password reset successfully.";
                     StandardSuccessResponse<Void> response = new StandardSuccessResponse<>(message);
                     return ResponseEntity.ok(response);
                 }));
@@ -193,23 +175,23 @@ public class UserController {
     @DeleteMapping("/{userId}")
     public Mono<? extends ResponseEntity<?>> deleteUser(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String userId) {
+            @PathVariable UUID userId) {
         // userService.deleteUser returns Mono<Void>. We use thenReturn() to wait for completion
         // and then emit the 204 No Content response.
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
         // --- Authorization check ---
-        if(viewerContext == null || !viewerContext.getUserId().equals(userId)){
+        if(viewerContext == null || !viewerContext.getUserId().equals(String.valueOf(userId))){
             throw new InsufficientPermissionException("Forbidden: Cannot delete another user's profile.");
         }
 
         // Keycloak update Mono
-        Mono<Void> keycloakDelete = userService.deleteUser(userId)
+        Mono<Void> keycloakDelete = userService.deleteUser(String.valueOf(userId))
                 .doOnError(e -> log.error("Keycloak deletion failed: {}", e.getMessage()));
 
         // Local DB deletion
-        Mono<Void> localDelete = appUserService.deleteLocalProfile(userId, viewerContext)
+        Mono<Void> localDelete = appUserService.deleteLocalProfile(String.valueOf(userId), viewerContext)
                 .doOnError(e -> log.error("Local DB deletion failed: {}", e.getMessage()));
 
         return Mono.zip(keycloakDelete, localDelete)

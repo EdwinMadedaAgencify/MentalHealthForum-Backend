@@ -28,6 +28,10 @@ public class UserResponse {
     private Instant dateJoined;
     private boolean isSelf;
 
+    // -- Transit Informative Data --
+    private String pendingEmail;
+    private String initials;
+
     // --- Enhanced Profile Data ---
     private String displayName;
     private String avatarUrl;

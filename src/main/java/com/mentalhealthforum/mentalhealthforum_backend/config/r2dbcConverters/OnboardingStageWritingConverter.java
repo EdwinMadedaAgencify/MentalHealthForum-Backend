@@ -1,0 +1,5 @@
+package com.mentalhealthforum.mentalhealthforum_backend.config.r2dbcConverters;
+
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
+
+public class OnboardingStageWritingConverter extends AbstractPostgresEnumWritingConverter<OnboardingStage>{}

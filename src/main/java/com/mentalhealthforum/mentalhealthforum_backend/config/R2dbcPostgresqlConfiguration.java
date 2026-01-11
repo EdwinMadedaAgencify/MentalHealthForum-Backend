@@ -2,6 +2,8 @@ package com.mentalhealthforum.mentalhealthforum_backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.r2dbcConverters.*;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OtpPurpose;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
@@ -52,6 +54,8 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                         // Register all Postgres ENUMs here
                         .withEnum("profile_visibility_enum", ProfileVisibility.class)
                         .withEnum("support_role_enum", SupportRole.class)
+                        .withEnum("onboarding_stage_enum", OnboardingStage.class)
+                        .withEnum("otp_purpose_enum", OtpPurpose.class)
                         .build())
                 .build();
     }
@@ -73,7 +77,11 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                 new ProfileVisibilityWritingConverter(),
                 new ProfileVisibilityReadingConverter(),
                 new SupportRoleWritingConverter(),
-                new SupportRoleReadingConverter()
+                new SupportRoleReadingConverter(),
+                new OnboardingStageWritingConverter(),
+                new OnboardingStageReadingConverter(),
+                new OtpPurposeWritingConverter(),
+                new OtpPurposeReadingConverter()
         );
     }
 
@@ -87,6 +95,10 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
         converters.add(new ProfileVisibilityReadingConverter());
         converters.add(new SupportRoleWritingConverter());
         converters.add(new SupportRoleReadingConverter());
+        converters.add(new OnboardingStageWritingConverter());
+        converters.add(new OnboardingStageReadingConverter());
+        converters.add(new OtpPurposeWritingConverter());
+        converters.add(new OtpPurposeReadingConverter());
 
         // Add JSONB converters
         converters.add(new JsonNodeToJsonWriteConverter(objectMapper));

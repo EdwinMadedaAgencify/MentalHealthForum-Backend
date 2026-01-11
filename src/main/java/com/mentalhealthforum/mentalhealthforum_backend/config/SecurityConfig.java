@@ -3,9 +3,13 @@ package com.mentalhealthforum.mentalhealthforum_backend.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableReactiveMethodSecurity;
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.web.server.authentication.ServerBearerTokenAuthenticationConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
@@ -19,19 +23,24 @@ import java.util.List;
 
 @Configuration
 // Change to the reactive security annotation
+@EnableScheduling // This turns on the background task engine
+@EnableWebFluxSecurity
 @EnableReactiveMethodSecurity
 public class SecurityConfig {
 
     private final String principalClaimName;
     private final SecurityExceptionHandler securityExceptionHandler;  // SecurityExceptionHandler implements ServerAuthenticationEntryPoint/ServerAccessDeniedHandler
+    private final OnboardingAuthorizationManager onboardingAuthorizationManager;
 
     public SecurityConfig(
             JwtProperties jwtProperties,
             SecurityExceptionHandler securityExceptionHandler,
-            CookieToJwtConverter cookieToJwtConverter
+            CookieToJwtConverter cookieToJwtConverter,
+            OnboardingAuthorizationManager onboardingAuthorizationManager
     ){
         this.principalClaimName = jwtProperties.getPrincipalClaimName();
         this.securityExceptionHandler = securityExceptionHandler;
+        this.onboardingAuthorizationManager = onboardingAuthorizationManager;
     }
 
     private static final String[] AUTH_WHITELIST = {
@@ -73,7 +82,8 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(auth -> auth
                         .pathMatchers(AUTH_WHITELIST).permitAll() // Allow unauthenticated access to whitelist
-                        .anyExchange().authenticated() // Require authentication for all other requests
+//                        .anyExchange().authenticated() // Require authentication for all other requests
+                                .anyExchange().access(onboardingAuthorizationManager)
                 )
                 // Use the combined handler for both 401 and 403
                 .exceptionHandling(handling -> handling
@@ -101,7 +111,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource(){
         CorsConfiguration configuration = new CorsConfiguration();
         // Allow the frontend domain
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:3001"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         // CRITICAL FOR COOKIE AUTH: Must allow credentials (cookies) to be sent cross-origin
@@ -110,5 +120,10 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder(){
+        return new BCryptPasswordEncoder();
     }
 }

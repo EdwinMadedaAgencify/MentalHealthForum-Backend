@@ -10,7 +10,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-@Target({ElementType.FIELD})
+@Target({ElementType.FIELD,  ElementType.CONSTRUCTOR})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = {}) // No custom validator needed yet
 @Size(max = 50, message = "First name cannot exceed 50 characters.")

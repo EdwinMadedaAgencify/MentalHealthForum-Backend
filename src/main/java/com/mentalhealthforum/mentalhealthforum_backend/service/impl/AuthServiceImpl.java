@@ -2,14 +2,17 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.JwtResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.AuthenticationFailedException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserActionRequiredException;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +27,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Implementation of the AuthService using WebClient to interact with Keycloak
@@ -39,14 +43,19 @@ public class AuthServiceImpl implements AuthService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+
+    private final AdminInvitationRepository adminInvitationRepository;
+
     private final WebClient webClient;
     private final String clientId;
     private final String clientSecret;
     private final String logoutUri;
 
     public AuthServiceImpl(
+            AdminInvitationRepository adminInvitationRepository,
             WebClient.Builder webClientBuilder,
             KeycloakProperties properties) {
+        this.adminInvitationRepository = adminInvitationRepository;
 
         String authServerUrl = properties.getAuthServerUrl();
         String realm = properties.getRealm();
@@ -104,7 +113,7 @@ public class AuthServiceImpl implements AuthService {
                                             // Pass error description directly with minimal hints
                                             if(KEYCLOAK_REQUIRED_ACTION_ERROR.equals(errorDescription)){
                                                 return Mono.error(new UserActionRequiredException(
-                                                        errorDescription + ". Please check your inbox for verification links or complete required profile updates."
+                                                        errorDescription + ". Please check your inbox for verification"
                                                 ));
                                             }
 
@@ -129,6 +138,31 @@ public class AuthServiceImpl implements AuthService {
                                     )));
                         })
                 .bodyToMono(JwtResponse.class)
+                .flatMap(jwtResponse -> {
+                    // Extract keycloak UUID (sub) from the token
+                    UUID keycloakId = extractSubject(jwtResponse.accessToken());
+
+                   return  adminInvitationRepository.findByKeycloakId(keycloakId)
+                           .flatMap(adminInvitation -> {
+                               boolean isRestrictedStage =
+                                       adminInvitation.getCurrentStage() == OnboardingStage.AWAITING_VERIFICATION ||
+                                       adminInvitation.getCurrentStage() == OnboardingStage.AWAITING_PASSWORD_RESET;
+
+                               // If the one-time pass was already invalidated, block entry
+                               if(isRestrictedStage && Boolean.FALSE.equals(adminInvitation.getIsInitialLogin())){
+                                   log.warn("Access denied: One time pass for user {} has already been used", keycloakId);
+//                                   log.warn("Access denied: Temporary credentials for user {} already used or expired.", keycloakId);
+                                   return Mono.error(
+                                           new AuthenticationFailedException("Your temporary password has expired. Please use 'Forgot Password' to set a new one.")
+                                   );
+                               }
+                               // First time? Invalidate the pass and let them through
+                               return adminInvitationRepository.invalidateOneTimePass(keycloakId)
+                                       .thenReturn(jwtResponse);
+                           })
+                           // No Lobby record? They are a regular user, let them through
+                           .defaultIfEmpty(jwtResponse);
+                })
                 .onErrorResume(WebClientRequestException.class, e -> {
                     log.error("Cannot connect to authentication service: {}", e.getMessage());
                     return Mono.error(new ApiException(
@@ -145,6 +179,18 @@ public class AuthServiceImpl implements AuthService {
                             e
                     ));
                 });
+    }
+
+    private UUID extractSubject(String accessToken) {
+        try{
+            String[] chunks = accessToken.split("\\.");
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(chunks[1]));
+            Map<String, Object> claims = objectMapper.readValue(payload, new TypeReference<>() {});
+            return UUID.fromString((String) claims.get("sub"));
+        } catch(Exception e){
+            log.error("Failed to extract subject from JWT during login intercept", e);
+            throw new AuthenticationFailedException("Authentication failed: invalid session token.");
+        }
     }
 
     /**

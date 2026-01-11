@@ -1,13 +1,18 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.RequiredAction;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.AppUserVerificationPayload;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.OtpPayload;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.SelfRegPayload;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserExistsException;
-import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
-import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakUserDtoMapper;
-import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.model.PendingUser;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.PendingUserRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.VerificationTokenRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.service.*;
+import com.mentalhealthforum.mentalhealthforum_backend.utils.EncryptionUtils;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,97 +34,185 @@ public class UserServiceImpl implements UserService {
 
     private final KeycloakAdminManager adminManager;
     private final KeycloakUserDtoMapper keycloakUserDtoMapper;
+    private final EncryptionUtils encryptionUtils;
+    private final PendingUserRepository pendingUserRepository;
+    private final VerificationTokenService tokenWorker;
+    private final VerificationService verificationService;
+    private final AdminInvitationService adminInvitationService;
+    private final OtpWorker otpWorker;
+    private final NovuService novuService;
 
     // Inject the new KeycloakAdminManagerImpl
-    public UserServiceImpl(KeycloakAdminManager adminManager, KeycloakUserDtoMapper keycloakUserDtoMapper) {
+    public UserServiceImpl(
+            KeycloakAdminManager adminManager,
+            KeycloakUserDtoMapper keycloakUserDtoMapper,
+            EncryptionUtils encryptionUtils,
+            PendingUserRepository pendingUserRepository,
+            VerificationTokenRepository verificationTokenRepository,
+            VerificationTokenService tokenWorker,
+            VerificationService verificationService,
+            AdminInvitationService adminInvitationService, AdminInvitationRepository adminInvitationRepository,
+            OtpWorker otpWorker,
+            NovuService novuService) {
         this.adminManager = adminManager;
         this.keycloakUserDtoMapper = keycloakUserDtoMapper;
+        this.encryptionUtils = encryptionUtils;
+        this.pendingUserRepository = pendingUserRepository;
+        this.tokenWorker = tokenWorker;
+        this.verificationService = verificationService;
+        this.adminInvitationService = adminInvitationService;
+        this.otpWorker = otpWorker;
+        this.novuService = novuService;
     }
 
     // ------------------ Public API Methods (Reactive Wrappers) ------------------
-
     @Override
-    public Mono<String> registerUser(RegisterUserRequest registerUserRequest) {
+    public Mono<String> createUserInStaging(RegisterUserRequest registerUserRequest) {
+        String username = registerUserRequest.username().trim();
+        String email = registerUserRequest.email().trim().toLowerCase();
+
         // Run blocking Keycloak Admin Client logic on a dedicated thread pool
-        return Mono.fromCallable(() -> {
-                    String username = registerUserRequest.username().trim();
-                    String email = registerUserRequest.email().trim().toLowerCase();
+        // Step 1: Global Identity Check (Blocking Keycloak calls)
+        return Mono.fromCallable(()-> {
+            // Check Keycloak (Global Identity)
+            if (adminManager.findUserByUsername(username).isPresent()) {
+                throw new UserExistsException("An account already exists for this username.");
+            }
 
-                    // Blocking checks delegated to the Manager
-                    if (adminManager.findUserByUsername(username).isPresent()) {
-                        throw new UserExistsException("An account already exists for this username.");
-                    }
+            if (adminManager.findUserByEmail(email).isPresent()) {
+                throw new UserExistsException("An account already exists for this email.");
+            }
+            return true;
+        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(unused ->
+                        // Step 2: Rate-Limit Check (Don't delete yet, just check)
+                       tokenWorker.checkRateLimit(email)
+                                // Step 3: Consolidated Wipe (Parallel execution)
+                                .then(Mono.when(
+                                     tokenWorker.removeToken(email),
+                                     pendingUserRepository.deleteByUsernameOrEmail(username, email)
+                                ))
+                                // Step 4: Create Staging State
+                                .then(Mono.defer(()-> {
+                                    String encryptedPassword = encryptionUtils.encrypt(registerUserRequest.password());
+                                    PendingUser pendingUser = new PendingUser(
+                                            null,
+                                            username,
+                                            email,
+                                            encryptedPassword,
+                                            registerUserRequest.firstName(),
+                                            registerUserRequest.lastName()
+                                    );
 
-                    if (adminManager.findUserByEmail(email).isPresent()) {
-                        throw new UserExistsException("An account already exists for this email.");
-                    }
+                                    return pendingUserRepository.save(pendingUser);
+                                }))
+                )
+                .flatMap(savedPending ->
+                    // Step 5: Generate Link and Trigger Communication
+                    verificationService.createVerificationLink(
+                            email,
+                            VerificationType.SELF_REG,
+                            GroupPath.MEMBERS_NEW.getPath(),
+                            null
+                    )
+                    .flatMap(verificationLink -> {
+                        SelfRegPayload payload = new SelfRegPayload(
+                                registerUserRequest.firstName(),
+                                verificationLink
+                        );
 
-//                    if (!registerUserRequest.password().trim().equals(registerUserRequest.confirmPassword().trim())) {
-//                        throw new PasswordMismatchException("Password and confirmation password do not match.");
-//                    }
-
-                    // Create password credential using the Manager's method
-                    // This method is already validated to throw InvalidPasswordException
-                    String password = registerUserRequest.password().trim();
-                    var passwordCred = adminManager.createPasswordCredential(password, false);
-
-                    UserRepresentation user = new UserRepresentation();
-                    user.setEnabled(true);
-                    user.setUsername(username);
-                    user.setEmail(email);
-                    user.setFirstName(registerUserRequest.firstName().trim());
-                    user.setLastName(registerUserRequest.lastName().trim());
-                    user.setCredentials(Collections.singletonList(passwordCred));
-
-                    // Temporary FIX: Set email verified to true & clear required actions for ROPC flow
-                    user.setEmailVerified(false);
-                    user.setRequiredActions(List.of(RequiredAction.VERIFY_EMAIL.name()));
-
-                    // Blocking user creation delegated to the Manager
-                    String userId = adminManager.createUser(user);
-
-                    // Blocking role assignment delegated to the Manager
-                    // adminManager.assignUserRole(userId, DEFAULT_FORUM_ROLE);
-
-                    // Assign to /members/new group using enum
-                    adminManager.assignUserToGroup(userId, GroupPath.MEMBERS_ACTIVE);
-
-                    return userId;
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+                        return novuService.triggerEvent(NovuWorkflow.SELF_REG_VERIFICATION, email, email, payload)
+                                .thenReturn(email); // Final Success
+                    })
+                );
     }
 
     @Override
-    public Mono<KeycloakUserDto> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest){
+    public Mono<KeycloakUserDto> createUserInKeycloak(PendingUser pendingUser, String groupPath) {
+        return Mono.fromCallable(()-> {
+            // Decrypt the password we staged earlier
+            String rawPassword = encryptionUtils.decrypt(pendingUser.encryptedPassword());
+
+            UserRepresentation userRep = new UserRepresentation();
+            userRep.setEnabled(true);
+            userRep.setUsername(pendingUser.username());
+            userRep.setEmail(pendingUser.email());
+            userRep.setFirstName(pendingUser.firstName());
+            userRep.setLastName(pendingUser.lastName());
+            userRep.setEmailVerified(true); // Verified by clicking the link
+
+            var passwordCred = adminManager.createPasswordCredential(rawPassword);
+            userRep.setCredentials(Collections.singletonList(passwordCred));
+
+            // Create in Keycloak
+            String userId = adminManager.createUser(userRep);
+
+            // Assign to the group specified in the token (e.g., MEMBERS_NEW)
+            adminManager.assignUserToGroup(userId, GroupPath.MEMBERS_NEW);
+            adminManager.markAsSyncedLocally(userId, false);
+            adminManager.assignInternalRole(userId, InternalRole.ONBOARDING);
+
+            return userId;
+        }).subscribeOn(Schedulers.boundedElastic())
+                .flatMap(this::getUser);
+    }
+
+    // Define the internal "Assembly Line" package
+    private record ProfileUpdateContext(
+            UserRepresentation userRep,
+            String newEmail,
+            boolean emailChanged
+    ){}
+
+    @Override
+    public Mono<ProfileUpdateResult> updateUserProfile(String userId, UpdateUserOnboardingProfileRequest updateUserProfileRequest){
         return Mono.fromCallable(() -> {
                     // Fetch user from Keycloak
                     UserRepresentation userRep = adminManager.findUserByUserId(userId)
-                            .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
+                            .orElseThrow(UserDoesNotExistException::new);
 
                     boolean keycloakNeedsUpdate = false;
 
                     keycloakNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.firstName(), userRep.getFirstName(), userRep::setFirstName);
                     keycloakNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.lastName(), userRep.getLastName(), userRep::setLastName);
 
-                    String newEmail = updateUserProfileRequest.email() != null ? updateUserProfileRequest.email().trim().toLowerCase() : null;
-                    Optional<UserRepresentation> existingUserWithNewEmail = adminManager.findUserByEmail(newEmail);
-                    if (existingUserWithNewEmail.isPresent() && !existingUserWithNewEmail.get().getId().equals(userId)) {
-                        throw new UserExistsException("The new email address is already in use by another account.");
-                    }
 
-                    keycloakNeedsUpdate |= setIfChangedStrict(newEmail, userRep.getEmail(), userRep::setEmail);
+                    String oldEmail = userRep.getEmail();
+                    String proposedEmail = updateUserProfileRequest.email() != null ? updateUserProfileRequest.email().trim().toLowerCase() : null;
+                    boolean emailChanged = proposedEmail != null && !proposedEmail.equalsIgnoreCase(oldEmail);
+
+                    Optional<UserRepresentation> existingUserWithNewEmail = adminManager.findUserByEmail(proposedEmail);
+                    if (existingUserWithNewEmail.isPresent() && !existingUserWithNewEmail.get().getId().equals(userId)) {
+                        throw new UserExistsException("An account already exists for this email.");
+                    }
 
                     // Perform update only if any changes detected
                     if (keycloakNeedsUpdate) {
                         adminManager.updateUser(userRep); // blocking Keycloak update
-                        log.info("Successfully updated profile for user ID: {}", userId);
-                    } else {
-                        log.debug("No profile changes detected for user ID: {}", userId);
                     }
 
-                    return keycloakUserDtoMapper.mapToKeycloakUserDto(userRep);
+                    return new ProfileUpdateContext(userRep, proposedEmail, emailChanged);
                 })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(ctx ->{
+                    if(ctx.emailChanged){
+                        // We do not update email in keycloak yet, We just trigger the "Confirmation" flow
+                        return verificationService.createVerificationLink(
+                                ctx.userRep.getEmail(),
+                                VerificationType.APP_USER,
+                                null,
+                                ctx.newEmail
+                        ).flatMap(verificationLink -> {
+                            AppUserVerificationPayload payload = new AppUserVerificationPayload(
+                                    ctx.userRep.getFirstName(), verificationLink, false);
+                            return novuService.triggerEvent(NovuWorkflow.APP_USER_VERIFICATION, ctx.userRep.getId(), ctx.newEmail, payload);
+                        })
+                                .thenReturn(new ProfileUpdateResult(keycloakUserDtoMapper.mapToKeycloakUserDto(ctx.userRep), ctx.newEmail));
+                    }
+                    return Mono.just(new ProfileUpdateResult(keycloakUserDtoMapper.mapToKeycloakUserDto(ctx.userRep), null));
+                });
+
     }
 
     @Override
@@ -127,7 +220,7 @@ public class UserServiceImpl implements UserService {
         return Mono.fromRunnable(() -> {
                     // Blocking lookup
                     adminManager.findUserByUserId(userId)
-                            .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
+                            .orElseThrow(UserDoesNotExistException::new);
 
                     // Block deletion in Keycloak
                     adminManager.deleteUser(userId);
@@ -144,7 +237,7 @@ public class UserServiceImpl implements UserService {
                         // Blocking lookup, then map to Response DTO
                         adminManager.findUserByUserId(userId)
                                 .map(keycloakUserDtoMapper::mapToKeycloakUserDto)
-                                .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId))
+                                .orElseThrow(UserDoesNotExistException::new)
                 )
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -164,20 +257,68 @@ public class UserServiceImpl implements UserService {
     }
 
 
+    @Override
+    public Mono<Void> initiateForgotPassword(String email){
+        // Start the reactive chain
+        return Mono.fromCallable(()-> adminManager.findUserByEmail(email))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(userOpt -> {
+                    // If user exists, proceed with OTP generation and Novu
+                    if(userOpt.isPresent()){
+                        return otpWorker.generateAndSaveOtp(email, OtpPurpose.FORGOT_PASSWORD)
+                                .flatMap(code -> novuService.triggerEvent(
+                                        NovuWorkflow.FORGOT_PASSWORD_OTP,
+                                        userOpt.get().getId(),
+                                        email,
+                                        new OtpPayload(code)
+                                ))
+                                .then();
+                    }
+                    // If user DOES NOT exist, log it internally but do nothing
+                    log.warn("Forgot password requested for non-existent email: {}", email);
+                    return Mono.empty();
+                })
+                .onErrorResume(e -> {
+                    log.error("Silent error during forgot password intitiation: ", e);
+                    return Mono.empty();
+                })
+                .then();
+    }
+
+    @Override
+    public Mono<Void> completeForgotPassword(ForgotPasswordRequest forgotPasswordRequest){
+        // Verify the otp (This deletes the OTP if successful, enforcing single-use
+        return otpWorker.verifyOtp(forgotPasswordRequest.email(), forgotPasswordRequest.otpCode(), OtpPurpose.FORGOT_PASSWORD)
+                .then(Mono.fromCallable(()-> {
+                    // Find User by Email in Keycloak (Blocking call)
+                    var userRep = adminManager.findUserByEmail(forgotPasswordRequest.email())
+                            .orElseThrow(UserDoesNotExistException::new);
+
+                    // Update password in Keycloak (Blocking call)
+                    adminManager.resetPassword(userRep.getId(), forgotPasswordRequest.newPassword().trim());
+
+                    return userRep.getId();
+                }))
+                // If they're in the lobby, move them to the next stage
+                .flatMap(adminInvitationService::processPasswordResetSuccess)
+                .subscribeOn(Schedulers.boundedElastic())
+                .doOnSuccess(unused -> log.info("Password successfully reset via OTP for new user: {}", forgotPasswordRequest.email()))
+                .then();
+    }
+
 
     @Override
     public Mono<Void> resetPassword(String userId, ResetPasswordRequest resetPasswordRequest) {
-        return Mono.fromRunnable(() -> {
+        return Mono.fromCallable(() -> {
                     adminManager.findUserByUserId(userId) // Blocking lookup
-                            .orElseThrow(() -> new UserDoesNotExistException("User not found for ID: " + userId));
-
-//                    if (!resetPasswordRequest.newPassword().equals(resetPasswordRequest.confirmPassword())) {
-//                        throw new PasswordMismatchException("New password and confirmation do not match.");
-//                    }
+                            .orElseThrow(UserDoesNotExistException::new);
 
                     adminManager.resetPassword(userId, resetPasswordRequest.newPassword().trim()); // Blocking reset
+
+                    return Mono.empty();
                 })
                 .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(unused -> adminInvitationService.processPasswordResetSuccess(userId))
                 .then();
     }
 }

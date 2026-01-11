@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 import org.springframework.stereotype.Component;
@@ -48,12 +49,36 @@ public class SecurityExceptionHandler implements ServerAuthenticationEntryPoint,
     @Override
     public Mono<Void> handle(ServerWebExchange exchange, AccessDeniedException ex) {
         logger.warn("403 Forbidden Access Attempt: {}", ex.getMessage());
-        return writeErrorResponse(
-                exchange,
-                HttpStatus.FORBIDDEN,
-                ErrorCode.FORBIDDEN,
-                "Forbidden: Insufficient permissions for this resource."
-        );
+
+        return exchange.getPrincipal()
+                .cast(JwtAuthenticationToken.class)
+                .flatMap(jwtAuthenticationToken -> {
+                    boolean isOnboarding = jwtAuthenticationToken.getAuthorities().stream()
+                            .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_ONBOARDING"));
+
+                    if(isOnboarding){
+                        return writeErrorResponse(
+                                exchange,
+                                HttpStatus.PRECONDITION_REQUIRED,
+                                ErrorCode.ONBOARDING_REQUIRED,
+                                "Your profile is incomplete. Please satisfy onboarding requirements first."
+                        );
+                    }
+                    return writeErrorResponse(
+                            exchange,
+                            HttpStatus.FORBIDDEN,
+                            ErrorCode.FORBIDDEN,
+                            "Forbidden: Insufficient permissions for this resource."
+                    );
+                })
+                // If anonymous (unauthenticated) reached here, it's a 403
+                .switchIfEmpty(
+                     writeErrorResponse(
+                            exchange,
+                            HttpStatus.FORBIDDEN,
+                            ErrorCode.FORBIDDEN,
+                            "Forbidden: Authentication required."
+                    ));
     }
 
     /**

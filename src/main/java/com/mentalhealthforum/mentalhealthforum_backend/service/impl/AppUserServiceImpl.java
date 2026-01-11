@@ -2,15 +2,19 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.KeycloakSyncException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.*;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.VerificationTokenRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.service.AdminInvitationService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserResponseMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
-import com.mentalhealthforum.mentalhealthforum_backend.utils.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
@@ -18,11 +22,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.mentalhealthforum.mentalhealthforum_backend.utils.ChangeUtils.*;
@@ -52,17 +55,33 @@ public class AppUserServiceImpl implements AppUserService {
 
     private final AppUserRepository appUserRepository;
     private final KeycloakAdminManager adminManager;
+    private final NovuServiceImpl novuServiceImpl;
     private final UserResponseMapper userResponseMapper;
+    private final AdminInvitationService adminInvitationService;
+    private final AdminInvitationRepository adminInvitationRepository;
+    private final VerificationTokenRepository verificationTokenRepository;
     private final WebClient webClient;
     private final  String userInfoUri;
+
+    private record KeycloakExtraDetails(Set<String> roles, Set<String> groups){}
 
     public AppUserServiceImpl(
             AppUserRepository appUserRepository,
             WebClient.Builder webClientBuilder,
-            KeycloakProperties keycloakProperties, KeycloakAdminManager adminManager, UserResponseMapper userResponseMapper) {
+            KeycloakProperties keycloakProperties,
+            KeycloakAdminManager adminManager,
+            NovuServiceImpl novuServiceImpl,
+            UserResponseMapper userResponseMapper,
+            AdminInvitationService adminInvitationService,
+            AdminInvitationRepository adminInvitationRepository,
+            VerificationTokenRepository verificationTokenRepository) {
         this.appUserRepository = appUserRepository;
         this.adminManager = adminManager;
+        this.novuServiceImpl = novuServiceImpl;
         this.userResponseMapper = userResponseMapper;
+        this.adminInvitationService = adminInvitationService;
+        this.adminInvitationRepository = adminInvitationRepository;
+        this.verificationTokenRepository = verificationTokenRepository;
 
         String authServerUrl = keycloakProperties.getAuthServerUrl();
         String realm = keycloakProperties.getRealm();
@@ -82,54 +101,89 @@ public class AppUserServiceImpl implements AppUserService {
      */
     @Override
     public Mono<UserResponse> syncUserViaAdminClient(KeycloakUserDto keycloakUserDto, ViewerContext viewerContext){
+        //  Create the base object (No I/O here, just memory)
         AppUser userDetails = new AppUser(
                 keycloakUserDto.userId(),
                 keycloakUserDto.email(),
                 keycloakUserDto.username(),
                 keycloakUserDto.firstName(),
                 keycloakUserDto.lastName());
+        return fetchKeycloakExtraDetails(keycloakUserDto.userId())
+                .flatMap(details -> {
+                    // Apply the real-time truth from Keycloak to our template
 
-        // Set display name
-        userDetails.setDisplayName(userDetails.getDisplayName());
+                    // Set display name
+                    //userDetails.setDisplayName(userDetails.getDisplayName());
 
-        // Set fields that are only relevant on INSERT
-        userDetails.setIsEnabled(keycloakUserDto.enabled());
-        userDetails.setDateJoined(keycloakUserDto.getCreatedInstant());
+                    // Set fields that are only relevant on INSERT
+                    userDetails.setIsEnabled(keycloakUserDto.enabled());
+                    userDetails.setDateJoined(keycloakUserDto.getCreatedInstant());
 
-        // Fetch roles and groups from Keycloak
-        List<String> roles = adminManager.getUserRealmRolesFromGroups(keycloakUserDto.userId());
-        List<String> groups = adminManager.getUserGroups(keycloakUserDto.userId());
+                    // Set fields that are relevant on EVERY sync
+                    userDetails.setLastSyncedAt(Instant.now());
+                    userDetails.setRoles(details.roles());
+                    userDetails.setGroups(details.groups());
 
-        // Convert to sets for local storage
-        userDetails.setRoles(new HashSet<>(roles));
-        userDetails.setGroups(new HashSet<>(groups));
-        userDetails.setLastSyncedAt(Instant.now());
+                    // 3. Search for existing local user
+                    return appUserRepository.findAppUserByKeycloakId(String.valueOf(userDetails.getKeycloakId()))
+                            .flatMap(existingUser -> {
+                                // --- Incrementally sync Keycloak-authoritative fields ---
+                                boolean localNeedsUpdate = false;
 
-        return appUserRepository.findAppUserByKeycloakId(String.valueOf(userDetails.getKeycloakId()))
-                .flatMap(existingUser -> {
-                    // --- Incrementally sync Keycloak-authoritative fields ---
-                    boolean localNeedsUpdate = false;
+                                // Incremental sync for Keycloak-authoritative fields
+                                localNeedsUpdate |= setIfChanged(userDetails.getEmail(), existingUser.getEmail(), existingUser::setEmail);
+                                localNeedsUpdate |= setIfChanged(userDetails.getUsername(), existingUser.getUsername(), existingUser::setUsername);
+                                localNeedsUpdate |= setIfChanged(userDetails.getFirstName(), existingUser.getFirstName(), existingUser::setFirstName);
+                                localNeedsUpdate |= setIfChanged(userDetails.getLastName(), existingUser.getLastName(), existingUser::setLastName);
 
-                    // Incremental sync for Keycloak-authoritative fields
-                    localNeedsUpdate |= setIfChanged(userDetails.getEmail(), existingUser.getEmail(), existingUser::setEmail);
-                    localNeedsUpdate |= setIfChanged(userDetails.getUsername(), existingUser.getUsername(), existingUser::setUsername);
-                    localNeedsUpdate |= setIfChanged(userDetails.getFirstName(), existingUser.getFirstName(), existingUser::setFirstName);
-                    localNeedsUpdate |= setIfChanged(userDetails.getLastName(), existingUser.getLastName(), existingUser::setLastName);
+                                // Incremental sync for status & cached fields
+                                localNeedsUpdate |= setIfChanged(userDetails.getIsEnabled(), existingUser.getIsEnabled(), existingUser::setIsEnabled);
+                                localNeedsUpdate |= setIfChanged(userDetails.getRoles(), existingUser.getRoles(), existingUser::setRoles);
+                                localNeedsUpdate |= setIfChanged(userDetails.getGroups(), existingUser.getGroups(), existingUser::setGroups);
 
-                    // Incremental sync for status & cached fields
-                    localNeedsUpdate |= setIfChanged(userDetails.getIsEnabled(), existingUser.getIsEnabled(), existingUser::setIsEnabled);
-                    localNeedsUpdate |= setIfChanged(userDetails.getRoles(), existingUser.getRoles(), existingUser::setRoles);
-                    localNeedsUpdate |= setIfChanged(userDetails.getGroups(), existingUser.getGroups(), existingUser::setGroups);
+                                // Save only if changes were detected to optimize database operations
+                                return localNeedsUpdate ? appUserRepository.save(existingUser) : Mono.just(existingUser);
+                            })
+                            .switchIfEmpty(Mono.defer(() -> {
+                                // 1. Check if the user is ready to be synced in our local DB
+                                return isReadyForSyncing(keycloakUserDto)
+                                        .flatMap(ready -> {
 
-                    // Save only if changes were detected to optimize database operations
-                    return localNeedsUpdate ? appUserRepository.save(existingUser) : Mono.just(existingUser);
+                                            // GATEKEEPER: NOT READY
+                                            if(!ready){
+                                                log.debug("User {} not ready for sync. Checking partial access.", keycloakUserDto.userId());
+
+//                                                // Allow Admin or Self to see the "Ghost Profile"
+//                                                if(viewerContext.isAdmin() || userDetails.getKeycloakId().toString().equals(viewerContext.getUserId())){
+//                                                    return Mono.just(userDetails);
+//                                                }
+                                                return Mono.empty();
+                                            }
+                                            // GATEKEEPER: READY (Atomic Transition)
+                                            log.info("User {} cleared all hurdles. Transitioning to AppUser.", keycloakUserDto.userId());
+//                                            userDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
+
+                                            return appUserRepository.save(userDetails)
+                                                    .flatMap(savedUser -> {
+                                                        // 4. Trigger simultaneous side effects
+                                                        return adminInvitationService.completeInvitation(savedUser.getKeycloakId())
+                                                                .then(Mono.fromRunnable(() ->
+                                                                        adminManager.markAsSyncedLocally(savedUser.getKeycloakId().toString(), true))
+                                                                        .subscribeOn(Schedulers.boundedElastic())
+                                                                )
+                                                                .thenReturn(savedUser);
+                                                    });
+                                        });
+                            }));
                 })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // User not found in local database - create new profile with default bio
-                    // R2DBC performs an INSERT here.
-                    userDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
-                    return appUserRepository.save(userDetails);
-                }))
+                .flatMap(appUser -> {
+                    if(appUser.getId() != null){
+                        return novuServiceImpl.upsertSubscriber(appUser).thenReturn(appUser);
+                    }
+                    return Mono.just(appUser);
+                })
+                .flatMap(appUser -> evaluateOnboardingPolicyCompliance(appUser, viewerContext).thenReturn(appUser))
+                .flatMap(this::enrichWithPendingEmail)
                 .map(appUser ->  userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**
@@ -141,7 +195,7 @@ public class AppUserServiceImpl implements AppUserService {
      * <ul>
      *   <li>{@link #syncUserViaAdminClient(KeycloakUserDto, ViewerContext)} - Complete user data sync</li>
      *   <li>{@link #getAppUserWithContext(String, ViewerContext)} (String, String)} - User profile retrieval</li>
-     *   <li>{@link #updateLocalProfile(String, ViewerContext, UpdateUserProfileRequest)} - Profile updates</li>
+     *   <li>{@link #updateLocalProfile(String, ViewerContext, UpdateUserOnboardingProfileRequest)} - Profile updates</li>
      * </ul>
      *
      * @param accessToken The JWT access token (user-specific)
@@ -222,14 +276,20 @@ public class AppUserServiceImpl implements AppUserService {
     @Override
     public Mono<UserResponse> getAppUserWithContext(String userId, ViewerContext viewerContext) {
         return appUserRepository.findAppUserByKeycloakId(userId)
-                .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
-                .map(appUser -> {
+                .switchIfEmpty(Mono.error(new UserDoesNotExistException()))
+                .flatMap(appUser -> {
+                    // Fetch Keycloak roles for Admins
                     if( viewerContext.isAdmin()){
-                        Set<String> roles = new HashSet<>(adminManager.getUserRealmRoles(appUser.getKeycloakId().toString()));
-                        appUser.setRoles(roles);
+                        return Mono.fromCallable(()-> adminManager.getUserRealmRoles(appUser.getKeycloakId().toString()))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .map(HashSet::new)
+                                .doOnNext(appUser::setRoles)
+                                .thenReturn(appUser);
                     }
-                    return appUser;
+                    return Mono.just(appUser);
                 })
+                .flatMap(this::enrichWithPendingEmail)
+                // Mapper now receives appUser with pendingEmail already attached
                 .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**
@@ -262,11 +322,17 @@ public class AppUserServiceImpl implements AppUserService {
             String sortDirection,
             String search){
 
+
+        if (page < 0 || size <= 0) {
+            log.error("Invalid pagination parameters: page={}, size={}", page, size);
+            throw new InvalidPaginationException();
+        }
+
         String currentUserId = viewerContext != null? viewerContext.getUserId() : null;
 
         int offset = page * size;
 
-        // Convert empty array to null
+        // Convert empty array to nullAdminInvitation
         String[] effectiveGroups = (groups == null || groups.length == 0) ? null : groups;
 
         // Convert empty search to null
@@ -293,10 +359,7 @@ public class AppUserServiceImpl implements AppUserService {
                             .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext))
                             .collect(Collectors.toList());
 
-                    int totalPages = total == 0? 0: (int) Math.ceil((double) total/size);
-                    boolean isLastPage = page >= totalPages - 1;
-
-                    return new PaginatedResponse<>(content, page, size, total, totalPages, isLastPage);
+                    return new PaginatedResponse<>(content, page, size, total);
                 });
     }
 
@@ -319,6 +382,19 @@ public class AppUserServiceImpl implements AppUserService {
             default -> "ASC"; // display_name
         };
     }
+
+    @Override
+    public Mono<Void> updateLocalEmail(String userId, String newEmail){
+        return appUserRepository.findAppUserByKeycloakId(userId)
+                .switchIfEmpty(Mono.error(new UserDoesNotExistException()))
+                .flatMap(appUser -> {
+                    boolean localEmailNeedsUpdate = setIfChangedStrict(newEmail, appUser.getEmail(), appUser::setEmail);
+                    return localEmailNeedsUpdate? appUserRepository.save(appUser): Mono.just(appUser);
+                })
+                .doOnSuccess(user -> log.info("Successfully synced local email for user: {}", userId))
+                .then();
+    }
+
     /**
      * Updates locally managed profile fields for the authenticated user.
      * Only allows users to update their own profiles (authorization enforced).
@@ -332,27 +408,29 @@ public class AppUserServiceImpl implements AppUserService {
      * @throws InsufficientPermissionException if viewer is not updating their own profile
      */
     @Override
-    public Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserProfileRequest updateUserProfileRequest){
-        return appUserRepository.findAppUserByKeycloakId(userId)
-                .switchIfEmpty(Mono.error(new UserDoesNotExistException("User not found for ID: " + userId)))
+    public Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserOnboardingProfileRequest updateUserProfileRequest){
+
+        return validateOnboardingPolicy(updateUserProfileRequest, viewerContext)
+                .then(appUserRepository.findAppUserByKeycloakId(userId))
+                .switchIfEmpty(Mono.error(new UserDoesNotExistException()))
                 .flatMap(appUser -> {
                     boolean localNeedsUpdate = false;
 
                     // Check if the user is updating their own profile
-                    if (viewerContext == null || !viewerContext.getUserId().equals(userId)) {
+                    if (!viewerContext.getUserId().equals(userId)) {
                         return Mono.error(new InsufficientPermissionException("Forbidden: Cannot update another user's profile."));
                     }
 
                         // --- Keycloak-authoritative fields ---
-                        localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.email(), appUser.getEmail(), appUser::setEmail);
+                        // Email not updated until verified in VerificationService.processVerification
                         localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.firstName(), appUser.getFirstName(), appUser::setFirstName);
                         localNeedsUpdate |= setIfChangedStrict(updateUserProfileRequest.lastName(), appUser.getLastName(), appUser::setLastName);
 
                         // --- User-controlled fields (allow null/blank to clear) --
-                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.displayName(), appUser.getDisplayName(), appUser::setDisplayName);
-                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.bio(), appUser.getBio(), appUser::setBio);
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.displayName(), appUser.displayName(), appUser::setDisplayName);
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.bio(), appUser.bio(), appUser::setBio);
                         localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.avatarUrl(), appUser.getAvatarUrl(), appUser::setAvatarUrl);
-                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.getTimezone(), appUser::setTimezone);
+                        localNeedsUpdate |= setIfChangedAllowNull(updateUserProfileRequest.timezone(), appUser.timezone(), appUser::setTimezone);
 
                         // Enum fields
                         localNeedsUpdate |= setIfChangedAllowNull(
@@ -362,7 +440,7 @@ public class AppUserServiceImpl implements AppUserService {
 
                         localNeedsUpdate |= setIfChangedAllowNull(
                                 updateUserProfileRequest.supportRole(),
-                                appUser.getSupportRole(),
+                                appUser.supportRole(),
                                 appUser::setSupportRole);
 
                         // Notification preferences (JSON-backed object)
@@ -374,6 +452,11 @@ public class AppUserServiceImpl implements AppUserService {
                     // --- Persist only if any changes ---
                     return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);
                 })
+                .flatMap(savedUser ->
+                        novuServiceImpl.upsertSubscriber(savedUser)
+                                .then(evaluateOnboardingPolicyCompliance(savedUser, viewerContext))
+                                .thenReturn(savedUser))
+                .flatMap(this::enrichWithPendingEmail)
                 .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext));
     }
     /**
@@ -405,11 +488,75 @@ public class AppUserServiceImpl implements AppUserService {
      * @param lastName User's last name (maybe null)
      * @return Personalized welcome message or generic welcome if name not available
      */
+    @Deprecated
     private String generateDefaultBio(String firstName, String lastName) {
         if (firstName != null && lastName != null) {
             return String.format("Hi, I'm %s %s. I'm here to connect, learn and grow. Let's support each other!", firstName, lastName);
         } else {
             return "Hi, I'm here to connect, learn and grow. Let's support each other!";
         }
+    }
+
+    private Mono<Boolean> isReadyForSyncing(KeycloakUserDto keycloakUserDto){
+        return adminInvitationRepository.findByKeycloakId(UUID.fromString(keycloakUserDto.userId()))
+                .map(adminInvitation -> {
+                    // The user is only ready to move to app_users
+                    // once they've cleared the final staging hurdle.
+                    return keycloakUserDto.emailVerified()
+                            && adminInvitation.getCurrentStage() == OnboardingStage.AWAITING_PROFILE_COMPLETION;
+                })
+                .defaultIfEmpty(keycloakUserDto.emailVerified()); // Fallback for self-registered who bypass the lobby
+    }
+
+    private Mono<UpdateUserOnboardingProfileRequest> validateOnboardingPolicy(
+            UpdateUserOnboardingProfileRequest updateUserOnboardingProfileRequest,
+            ViewerContext viewerContext){
+
+        OnboardingPolicy.Result result = viewerContext.checkOnboardingPolicy(updateUserOnboardingProfileRequest);
+
+        if(!result.isSatisfied()){
+            return Mono.error(new OnboardingPolicyViolationException(result.violations()));
+        }
+        return Mono.just(updateUserOnboardingProfileRequest);
+    }
+
+    private Mono<Void> evaluateOnboardingPolicyCompliance(AppUser appUser, ViewerContext viewerContext){
+       return Mono.fromRunnable(()-> {
+                   String userId = String.valueOf(appUser.getKeycloakId());
+
+                   if(viewerContext.checkOnboardingPolicy(appUser).isSatisfied()){
+                       adminManager.removeInternalRole(userId, InternalRole.ONBOARDING);
+                   }
+                   else {
+                       adminManager.assignInternalRole(userId, InternalRole.ONBOARDING);
+                   }
+               }).subscribeOn(Schedulers.boundedElastic())
+               .then();
+    }
+
+    private Mono<KeycloakExtraDetails> fetchKeycloakExtraDetails(String userId){
+        return Mono.fromCallable(()-> {
+            List<String> roles = adminManager.getUserRealmRolesFromGroups(userId);
+            List<String> groups = adminManager.getUserGroups(userId);
+            return new KeycloakExtraDetails(new HashSet<>(roles), new HashSet<>(groups));
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Enriches the AppUser model with transient metadata from active verification tokens.
+     * This ensures the 'pendingEmail' field is populated across all retrieval and sync flows.
+     */
+    private Mono<AppUser> enrichWithPendingEmail(AppUser appUser){
+        //If the user hasn't been saved yet (no email), just return
+        if(appUser.getEmail() == null){
+            return Mono.just(appUser);
+        }
+
+        return verificationTokenRepository.findByEmailAndType(appUser.getEmail(), VerificationType.APP_USER)
+                .map(verificationToken -> {
+                    appUser.setPendingEmail(verificationToken.getNewValue());
+                    return appUser;
+                })
+                .defaultIfEmpty(appUser);
     }
 }
