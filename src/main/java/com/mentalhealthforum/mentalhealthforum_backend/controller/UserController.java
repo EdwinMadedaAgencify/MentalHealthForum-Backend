@@ -2,7 +2,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.OnboardingPolicyViolationException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;

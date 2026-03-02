@@ -2,7 +2,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.ManualTriggerTestPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.NovuWorkflow;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 

@@ -10,12 +10,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 
 /**
@@ -51,19 +54,35 @@ public class SecurityExceptionHandler implements ServerAuthenticationEntryPoint,
         logger.warn("403 Forbidden Access Attempt: {}", ex.getMessage());
 
         return exchange.getPrincipal()
-                .cast(JwtAuthenticationToken.class)
-                .flatMap(jwtAuthenticationToken -> {
-                    boolean isOnboarding = jwtAuthenticationToken.getAuthorities().stream()
-                            .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_ONBOARDING"));
+//                .filter(principal -> !(principal instanceof JwtAuthenticationToken))
+//                .cast(JwtAuthenticationToken.class)
+                .flatMap(principal -> {
 
-                    if(isOnboarding){
-                        return writeErrorResponse(
-                                exchange,
-                                HttpStatus.PRECONDITION_REQUIRED,
-                                ErrorCode.ONBOARDING_REQUIRED,
-                                "Your profile is incomplete. Please satisfy onboarding requirements first."
-                        );
+                    // Check if it's a JwtAuthenticationToken
+                    if(principal instanceof JwtAuthenticationToken jwtAuthenticationToken){
+
+                        // Get raw list of authorities
+                        List<String> authorities = jwtAuthenticationToken.getAuthorities().stream()
+                                .map(GrantedAuthority::getAuthority)
+                                .toList();
+
+                        logger.info("Security Audit - User: {} | Authorities found: {}", jwtAuthenticationToken.getName(), authorities);
+
+                        boolean isOnboarding = jwtAuthenticationToken.getAuthorities().stream()
+                                .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_ONBOARDING"));
+
+                        if(isOnboarding){
+                            logger.debug("Redirecting to Onboarding flow for user: {}", jwtAuthenticationToken.getName());
+                            return writeErrorResponse(
+                                    exchange,
+                                    HttpStatus.PRECONDITION_REQUIRED,
+                                    ErrorCode.ONBOARDING_REQUIRED,
+                                    "Your profile is incomplete. Please satisfy onboarding requirements first."
+                            );
+                        }
                     }
+
+                    // For non-JWT principals or non-onboarding users, return 403
                     return writeErrorResponse(
                             exchange,
                             HttpStatus.FORBIDDEN,

@@ -2,7 +2,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 
@@ -85,10 +84,34 @@ public interface PrivilegedUser {
 
     public default OnboardingPolicy.Result checkOnboardingPolicy(OnboardingProfileData onboardingProfileData) {
         List<OnboardingPolicy.Violation> violations = new ArrayList<>();
+        List<OnboardingPolicy.FieldRequirement> requirements = new ArrayList<>();
+
         String bio = onboardingProfileData.bio() != null? onboardingProfileData.bio().trim(): "";
 
         //  ROLE-SPECIFIC REQUIREMENTS (Mutually Exclusive Hierarchy)
         if (this.isPrivileged()) {
+
+            requirements.add(new OnboardingPolicy.FieldRequirement(
+                    "bio",
+                    true,
+                    100,
+                    "Privileged roles require a detailed bio for community trust."
+            ));
+
+            requirements.add(new OnboardingPolicy.FieldRequirement(
+                    "timezone",
+                    true,
+                    null,
+                    "Timezone required for coordination."
+            ));
+
+            requirements.add(new OnboardingPolicy.FieldRequirement(
+                    "supportRole",
+                    true,
+                    null,
+                    "Select your support role."
+            ));
+
             if (bio.length() < 100) {
                 violations.add(new OnboardingPolicy.Violation("bio", "Privileged roles require a bio of at least 100 characters for community trust."));
             }
@@ -102,16 +125,31 @@ public interface PrivilegedUser {
             }
         }
         else if (this.isTrustedMember()) {
+
+            requirements.add(new OnboardingPolicy.FieldRequirement(
+                    "bio",
+                    true,
+                    50,
+                    "Trusted members need a thoughtful bio."
+            ));
+
             if (bio.length() < 50) {
                 violations.add(new OnboardingPolicy.Violation("bio", "Trusted members require a bio of at least 50 characters."));
             }
         }
         else {
+            requirements.add(new OnboardingPolicy.FieldRequirement(
+                    "bio",
+                    true,
+                    20,
+                    "Tell the community a bit about yourself."
+            ));
+
             if (bio.length() < 20) {
                 violations.add(new OnboardingPolicy.Violation("bio", "Please provide a bio of at least 20 characters to join the community."));
             }
         }
 
-        return violations.isEmpty() ? OnboardingPolicy.Result.success() : OnboardingPolicy.Result.failure(violations);
+        return violations.isEmpty() ? OnboardingPolicy.Result.success(requirements) : OnboardingPolicy.Result.failure(violations, requirements);
     }
 }

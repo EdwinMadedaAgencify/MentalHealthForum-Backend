@@ -15,8 +15,12 @@ public class OnboardingAuthorizationManager implements ReactiveAuthorizationMana
     @Override
     public Mono<AuthorizationDecision> check(Mono<Authentication> authentication, AuthorizationContext context) {
         return authentication
-                .cast(JwtAuthenticationToken.class)
-                .map(jwtAuthenticationToken -> {
+//              .cast(JwtAuthenticationToken.class)
+                .map(auth -> {
+                    if (!(auth instanceof JwtAuthenticationToken jwtAuthenticationToken)) {
+                        return new AuthorizationDecision(true);
+                    }
+
                     boolean isOnboarding = jwtAuthenticationToken.getAuthorities().stream()
                             .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_ONBOARDING"));
 

@@ -67,3 +67,19 @@ logging:
     org.jboss.resteasy: DEBUG
     org.apache.http: DEBUG
     org.apache.http.wire: DEBUG
+
+
+    com:
+      mentalhealthforum:
+        mentalhealthforum_backend:
+          config=DEBUG:
+
+    org:
+      springframework:
+        security:
+          oauth2:
+            server:
+              resource=DEBUG:
+
+          authorization=DEBUG:
+        security=INFO:
