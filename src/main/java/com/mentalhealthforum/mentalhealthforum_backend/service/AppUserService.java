@@ -89,7 +89,7 @@ public interface AppUserService {
      * @return Mono of the updated user profile response.
      * @throws InsufficientPermissionException if viewer is not updating their own profile
      */
-    Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserOnboardingProfileRequest updateUserProfileRequest);
+    Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserProfileRequest updateUserProfileRequest);
 
     /**
      * Deletes the local user profile from the R2DBC database for a given Keycloak ID.

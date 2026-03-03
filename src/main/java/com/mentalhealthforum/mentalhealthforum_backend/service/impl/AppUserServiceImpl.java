@@ -195,7 +195,7 @@ public class AppUserServiceImpl implements AppUserService {
      * <ul>
      *   <li>{@link #syncUserViaAdminClient(KeycloakUserDto, ViewerContext)} - Complete user data sync</li>
      *   <li>{@link #getAppUserWithContext(String, ViewerContext)} (String, String)} - User profile retrieval</li>
-     *   <li>{@link #updateLocalProfile(String, ViewerContext, UpdateUserOnboardingProfileRequest)} - Profile updates</li>
+     *   <li>{@link #updateLocalProfile(String, ViewerContext, UpdateUserProfileRequest)} - Profile updates</li>
      * </ul>
      *
      * @param accessToken The JWT access token (user-specific)
@@ -408,7 +408,7 @@ public class AppUserServiceImpl implements AppUserService {
      * @throws InsufficientPermissionException if viewer is not updating their own profile
      */
     @Override
-    public Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserOnboardingProfileRequest updateUserProfileRequest){
+    public Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserProfileRequest updateUserProfileRequest){
 
         return validateOnboardingPolicy(updateUserProfileRequest, viewerContext)
                 .then(appUserRepository.findAppUserByKeycloakId(userId))
@@ -508,16 +508,16 @@ public class AppUserServiceImpl implements AppUserService {
                 .defaultIfEmpty(keycloakUserDto.emailVerified()); // Fallback for self-registered who bypass the lobby
     }
 
-    private Mono<UpdateUserOnboardingProfileRequest> validateOnboardingPolicy(
-            UpdateUserOnboardingProfileRequest updateUserOnboardingProfileRequest,
+    private Mono<UpdateUserProfileRequest> validateOnboardingPolicy(
+            UpdateUserProfileRequest updateUserProfileRequest,
             ViewerContext viewerContext){
 
-        OnboardingPolicy.Result result = viewerContext.checkOnboardingPolicy(updateUserOnboardingProfileRequest);
+        OnboardingPolicy.Result result = viewerContext.checkOnboardingPolicy(updateUserProfileRequest);
 
         if(!result.isSatisfied()){
             return Mono.error(new OnboardingPolicyViolationException(result.violations()));
         }
-        return Mono.just(updateUserOnboardingProfileRequest);
+        return Mono.just(updateUserProfileRequest);
     }
 
     private Mono<Void> evaluateOnboardingPolicyCompliance(AppUser appUser, ViewerContext viewerContext){

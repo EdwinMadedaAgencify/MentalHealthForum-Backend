@@ -1,6 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.AuthenticationFailedException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +34,11 @@ public class JwtClaimsExtractor {
     private static final String GROUPS = "groups";
 
     public ViewerContext extractViewerContext(Jwt jwt){
+
+        if(jwt == null){
+            throw new AuthenticationFailedException("Valid session required to access this resource.");
+        }
+
         String userId = jwt.getSubject();
         String email = jwt.getClaimAsString(EMAIL);
         String username = jwt.getClaimAsString(PREFERRED_USERNAME);

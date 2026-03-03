@@ -11,12 +11,8 @@ import com.mentalhealthforum.mentalhealthforum_backend.validation.firstName.Vali
 import com.mentalhealthforum.mentalhealthforum_backend.validation.lastName.ValidLastName;
 import com.mentalhealthforum.mentalhealthforum_backend.validation.url.ValidUrl;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
-import org.hibernate.validator.constraints.URL;
 
-
-public record UpdateUserOnboardingProfileRequest(
+public record UpdateUserProfileRequest(
 
         @ValidEmail
         String email,

@@ -166,7 +166,7 @@ public class UserServiceImpl implements UserService {
     ){}
 
     @Override
-    public Mono<ProfileUpdateResult> updateUserProfile(String userId, UpdateUserOnboardingProfileRequest updateUserProfileRequest){
+    public Mono<ProfileUpdateResult> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest){
         return Mono.fromCallable(() -> {
                     // Fetch user from Keycloak
                     UserRepresentation userRep = adminManager.findUserByUserId(userId)

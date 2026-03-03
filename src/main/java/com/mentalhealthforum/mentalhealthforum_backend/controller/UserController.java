@@ -2,7 +2,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.OnboardingPolicyViolationException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
@@ -112,7 +111,7 @@ public class UserController {
     public Mono<ResponseEntity<StandardSuccessResponse<UserResponse>>> updateUserProfile(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userId,
-            @Valid @RequestBody UpdateUserOnboardingProfileRequest updateUserProfileRequest) {
+            @Valid @RequestBody UpdateUserProfileRequest updateUserProfileRequest) {
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
@@ -125,6 +124,7 @@ public class UserController {
         return Mono.just(updateUserProfileRequest)
                 .flatMap(updateUserOnboardingProfileRequest -> {
                     OnboardingPolicy.Result result = viewerContext.checkOnboardingPolicy(updateUserOnboardingProfileRequest);
+
                     if(!result.isSatisfied()){
                         return Mono.error(new OnboardingPolicyViolationException(result.violations()));
                     }

@@ -49,7 +49,7 @@ public interface UserService {
      * @param updateUserProfileRequest The update details.
      * @return Mono of the updated KeycloakUserDto.
      */
-    Mono<ProfileUpdateResult> updateUserProfile(String userId, UpdateUserOnboardingProfileRequest updateUserProfileRequest);
+    Mono<ProfileUpdateResult> updateUserProfile(String userId, UpdateUserProfileRequest updateUserProfileRequest);
 
 
     Mono<Void> initiateForgotPassword(String email);
