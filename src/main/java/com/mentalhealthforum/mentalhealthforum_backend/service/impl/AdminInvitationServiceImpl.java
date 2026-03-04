@@ -1,9 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.InviterDto;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.InviterDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.PendingAdminInviteDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.PendingAdminInviteDto;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitation;

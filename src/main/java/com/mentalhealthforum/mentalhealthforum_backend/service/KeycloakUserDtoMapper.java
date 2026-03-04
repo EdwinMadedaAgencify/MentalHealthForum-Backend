@@ -1,6 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Component;
 

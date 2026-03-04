@@ -1,10 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.RequestNewVerificationLinkRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.verification.RequestNewVerificationLinkRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.VerificationRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.VerificationDto;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.verification.VerificationRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.verification.VerificationDto;
 import com.mentalhealthforum.mentalhealthforum_backend.service.VerificationService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

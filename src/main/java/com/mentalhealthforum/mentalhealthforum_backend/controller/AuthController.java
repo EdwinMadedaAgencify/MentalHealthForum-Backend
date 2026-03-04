@@ -1,8 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.ForgotPasswordInitRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.ForgotPasswordRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.ForgotPasswordInitRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.ForgotPasswordRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;

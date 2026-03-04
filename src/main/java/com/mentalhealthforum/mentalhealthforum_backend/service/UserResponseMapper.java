@@ -1,6 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.UserResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.timezone.TimezoneDetails;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
@@ -34,6 +35,12 @@ public class UserResponseMapper {
     // Business rule flags (could be made configurable if needed)
     private static final boolean ENFORCE_ADMIN_TRANSPARENCY = true;
     private static final boolean SHOW_SUPPORTROLE_TO_PRIVILEGED_ONLY = true;
+
+    private final TimezoneService timezoneService;
+
+    public UserResponseMapper(TimezoneService timezoneService) {
+        this.timezoneService = timezoneService;
+    }
 
     /**
      * Creates a minimal public view of a user with only always-public fields.
@@ -81,8 +88,14 @@ public class UserResponseMapper {
         response.setAvatarUrl(targetUser.getAvatarUrl());
         response.setBio(targetUser.getBio());
         response.setTimezone(targetUser.getTimezone());
-        response.setLanguage(targetUser.getLanguage());
 
+        // Enrich with timezone details using the service
+        if(targetUser.getTimezone() != null){
+            TimezoneDetails details = timezoneService.getTimezoneDetails(targetUser.getTimezone());
+            response.setTimezoneDetails(details);
+        }
+
+        response.setLanguage(targetUser.getLanguage());
         response.setPendingEmail(targetUser.getPendingEmail());
 
         // Override profile visibility for admins/moderators - they cannot be anonymous
@@ -92,9 +105,7 @@ public class UserResponseMapper {
                         ? ProfileVisibility.MEMBERS_ONLY
                         : targetUser.getProfileVisibility());
 
-        response.setSupportRole(targetUser.getSupportRole());
-        response.setNotificationPreferences(targetUser.getNotificationPreferences());
-
+//        response.setSupportRole(targetUser.getSupportRole());
 
         return response;
     }
@@ -116,7 +127,6 @@ public class UserResponseMapper {
         response.setUsername(null);
         response.setEmail(null);
         response.setPendingEmail(null);
-        response.setNotificationPreferences(null);
 
         // Check viewer privileges
         boolean isViewerPrivileged = isViewerPrivileged(viewerContext);
@@ -177,6 +187,13 @@ public class UserResponseMapper {
 
         // Preferences/details - visible to all authenticated members
         baseResponse.setTimezone(targetUser.getTimezone());
+
+        // Enrich with timezone details using the service
+        if (targetUser.getTimezone() != null) {
+            TimezoneDetails details = timezoneService.getTimezoneDetails(targetUser.getTimezone());
+            baseResponse.setTimezoneDetails(details);
+        }
+
         baseResponse.setLanguage(targetUser.getLanguage());
 
         // Profile visibility override: admins/moderators can't be fully private
@@ -186,9 +203,9 @@ public class UserResponseMapper {
                         : targetUser.getProfileVisibility());
 
         // SupportRole only for privileged viewers
-        if (SHOW_SUPPORTROLE_TO_PRIVILEGED_ONLY && isViewerPrivileged) {
-            baseResponse.setSupportRole(targetUser.getSupportRole());
-        }
+//        if (SHOW_SUPPORTROLE_TO_PRIVILEGED_ONLY && isViewerPrivileged) {
+//            baseResponse.setSupportRole(targetUser.getSupportRole());
+//        }
 
         return baseResponse; // Early return - admin/moderator logic handled
     }
@@ -215,13 +232,20 @@ public class UserResponseMapper {
         baseResponse.setAvatarUrl(targetUser.getAvatarUrl());
         baseResponse.setBio(targetUser.getBio());
         baseResponse.setTimezone(targetUser.getTimezone());
+
+        // Enrich with timezone details using the service
+        if(targetUser.getTimezone() != null){
+            TimezoneDetails details = timezoneService.getTimezoneDetails(targetUser.getTimezone());
+            baseResponse.setTimezoneDetails(details);
+        }
+
         baseResponse.setLanguage(targetUser.getLanguage());
         baseResponse.setProfileVisibility(ProfileVisibility.MEMBERS_ONLY);
 
         // SupportRole: Only show to privileged viewers
-        if (SHOW_SUPPORTROLE_TO_PRIVILEGED_ONLY && isViewerPrivileged) {
-            baseResponse.setSupportRole(targetUser.getSupportRole());
-        }
+//        if (SHOW_SUPPORTROLE_TO_PRIVILEGED_ONLY && isViewerPrivileged) {
+//            baseResponse.setSupportRole(targetUser.getSupportRole());
+//        }
         return baseResponse;
     }
     /**
@@ -235,8 +259,9 @@ public class UserResponseMapper {
         baseResponse.setAvatarUrl(null);
         baseResponse.setBio(null);
         baseResponse.setTimezone(null);
+        baseResponse.setTimezoneDetails(null);
         baseResponse.setLanguage(null);
-        baseResponse.setSupportRole(null);
+//        baseResponse.setSupportRole(null);
         baseResponse.setProfileVisibility(ProfileVisibility.PRIVATE);
 
         return baseResponse;

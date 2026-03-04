@@ -10,5 +10,5 @@ public interface OnboardingProfileData {
     String displayName();
     String bio();
     String timezone();
-    SupportRole supportRole();
+//    SupportRole supportRole();
 }

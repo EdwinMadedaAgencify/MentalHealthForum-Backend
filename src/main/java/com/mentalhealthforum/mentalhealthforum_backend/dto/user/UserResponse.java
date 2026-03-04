@@ -1,6 +1,7 @@
-package com.mentalhealthforum.mentalhealthforum_backend.dto;
+package com.mentalhealthforum.mentalhealthforum_backend.dto.user;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.timezone.TimezoneDetails;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 import lombok.Getter;
@@ -35,10 +36,11 @@ public class UserResponse {
     // --- Enhanced Profile Data ---
     private String displayName;
     private String avatarUrl;
-    private String timezone;
+    private String timezone;  // Just the ID (e.g., "Mexico/BajaSur")
+    private TimezoneDetails timezoneDetails;  // Full details (displayName, offset, region)
     private String language;
     private ProfileVisibility profileVisibility;
-    private SupportRole supportRole;
+    //  private SupportRole supportRole;
 
     // --- Engagement Metrics ---
     private Integer postsCount;
@@ -52,7 +54,7 @@ public class UserResponse {
     private Set<String> groups;
 
     // --- User Preferences ---
-    private NotificationPreferences notificationPreferences;
+    // private NotificationPreferences notificationPreferences;
 
     // PROFILE CONSTRUCTOR (Privacy-Respecting) ===
     public UserResponse(

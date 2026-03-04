@@ -2,6 +2,10 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.RegisterUserRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.ResetPasswordRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UpdateUserProfileRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.OnboardingPolicyViolationException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
@@ -121,15 +125,7 @@ public class UserController {
         }
 
         // Try Keycloak update first
-        return Mono.just(updateUserProfileRequest)
-                .flatMap(updateUserOnboardingProfileRequest -> {
-                    OnboardingPolicy.Result result = viewerContext.checkOnboardingPolicy(updateUserOnboardingProfileRequest);
-
-                    if(!result.isSatisfied()){
-                        return Mono.error(new OnboardingPolicyViolationException(result.violations()));
-                    }
-                   return userService.updateUserProfile(String.valueOf(userId), updateUserProfileRequest);
-                })
+            return userService.updateUserProfile(String.valueOf(userId), updateUserProfileRequest)
                 .flatMap(profileUpdateResult -> {
                     // Keycloak succeeded, now try local DB
                     return appUserService.updateLocalProfile(String.valueOf(userId), viewerContext, updateUserProfileRequest);

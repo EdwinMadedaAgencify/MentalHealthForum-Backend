@@ -1,4 +1,4 @@
-package com.mentalhealthforum.mentalhealthforum_backend.dto;
+package com.mentalhealthforum.mentalhealthforum_backend.dto.auth;
 
 import com.mentalhealthforum.mentalhealthforum_backend.validation.ValidEmail;
 import com.mentalhealthforum.mentalhealthforum_backend.validation.password.PasswordMatching;

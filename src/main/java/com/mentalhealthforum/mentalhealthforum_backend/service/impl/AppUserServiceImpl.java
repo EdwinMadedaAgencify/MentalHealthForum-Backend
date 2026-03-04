@@ -3,6 +3,9 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UpdateUserProfileRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
@@ -410,8 +413,7 @@ public class AppUserServiceImpl implements AppUserService {
     @Override
     public Mono<UserResponse> updateLocalProfile(String userId, ViewerContext viewerContext, UpdateUserProfileRequest updateUserProfileRequest){
 
-        return validateOnboardingPolicy(updateUserProfileRequest, viewerContext)
-                .then(appUserRepository.findAppUserByKeycloakId(userId))
+        return appUserRepository.findAppUserByKeycloakId(userId)
                 .switchIfEmpty(Mono.error(new UserDoesNotExistException()))
                 .flatMap(appUser -> {
                     boolean localNeedsUpdate = false;
@@ -438,16 +440,16 @@ public class AppUserServiceImpl implements AppUserService {
                                 appUser.getProfileVisibility(),
                                 appUser::setProfileVisibility);
 
-                        localNeedsUpdate |= setIfChangedAllowNull(
-                                updateUserProfileRequest.supportRole(),
-                                appUser.supportRole(),
-                                appUser::setSupportRole);
+//                        localNeedsUpdate |= setIfChangedAllowNull(
+//                                updateUserProfileRequest.supportRole(),
+//                                appUser.supportRole(),
+//                                appUser::setSupportRole);
 
                         // Notification preferences (JSON-backed object)
-                        localNeedsUpdate |= setIfChangedAllowNull(
-                                updateUserProfileRequest.notificationPreferences(),
-                                appUser.getNotificationPreferences(),
-                                appUser::setNotificationPreferences);
+//                        localNeedsUpdate |= setIfChangedAllowNull(
+//                                updateUserProfileRequest.notificationPreferences(),
+//                                appUser.getNotificationPreferences(),
+//                                appUser::setNotificationPreferences);
 
                     // --- Persist only if any changes ---
                     return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);

@@ -1,13 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingStatusResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.PendingActionsResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.authStatus.PendingActionsResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.service.*;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,25 +47,5 @@ public class AuthStatusController {
                 });
     }
 
-
-    @GetMapping("/onboarding")
-    public Mono<ResponseEntity<StandardSuccessResponse<OnboardingStatusResponse>>> getOnboardingStatus(
-            @AuthenticationPrincipal Jwt jwt
-    ) {
-        ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        String userId = viewerContext.getUserId();
-
-        return userService.getUser(userId)
-                .flatMap(keycloakUserDto ->
-                        appUserService.syncUserViaAdminClient(keycloakUserDto, viewerContext))
-                .then(onboardingService.getOnboardingStatus(viewerContext)
-                        .map(onboardingStatusResponse -> {
-                            var success = new StandardSuccessResponse<>(
-                                    "Onboarding status retrieved successfully.",
-                                    onboardingStatusResponse
-                            );
-                            return ResponseEntity.ok(success);
-                        }));
-    }
 
 }

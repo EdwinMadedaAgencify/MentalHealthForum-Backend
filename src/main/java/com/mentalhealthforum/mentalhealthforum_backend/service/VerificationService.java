@@ -1,8 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.VerificationDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.verification.VerificationDto;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
-import jakarta.validation.constraints.NotBlank;
 import reactor.core.publisher.Mono;
 
 public interface VerificationService {

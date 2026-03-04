@@ -2,7 +2,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 
@@ -121,9 +120,9 @@ public interface PrivilegedUser {
                 violations.add(new OnboardingPolicy.Violation("timezone", "Timezone is required for privileged users to coordinate support."));
             }
 
-            if (onboardingProfileData.supportRole() == null || onboardingProfileData.supportRole() == SupportRole.NOT_SPECIFIED) {
-                violations.add(new OnboardingPolicy.Violation("supportRole", "Please specify your support role."));
-            }
+//            if (onboardingProfileData.supportRole() == null || onboardingProfileData.supportRole() == SupportRole.NOT_SPECIFIED) {
+//                violations.add(new OnboardingPolicy.Violation("supportRole", "Please specify your support role."));
+//            }
         }
         else if (this.isTrustedMember()) {
 

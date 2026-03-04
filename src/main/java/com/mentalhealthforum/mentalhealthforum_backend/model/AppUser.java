@@ -227,8 +227,8 @@ public class AppUser implements PrivilegedUser, OnboardingProfileData {
         return this.timezone;
     }
 
-    @Override
-    public SupportRole supportRole() {
-        return this.supportRole;
-    }
+//    @Override
+//    public SupportRole supportRole() {
+//        return this.supportRole;
+//    }
 }

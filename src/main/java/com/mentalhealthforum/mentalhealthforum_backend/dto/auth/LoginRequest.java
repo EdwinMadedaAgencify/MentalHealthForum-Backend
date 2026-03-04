@@ -1,4 +1,4 @@
-package com.mentalhealthforum.mentalhealthforum_backend.dto;
+package com.mentalhealthforum.mentalhealthforum_backend.dto.auth;
 
 import jakarta.validation.constraints.NotBlank;
 

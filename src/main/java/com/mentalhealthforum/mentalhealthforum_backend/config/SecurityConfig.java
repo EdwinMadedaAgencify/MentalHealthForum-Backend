@@ -49,7 +49,8 @@ public class SecurityConfig {
             "/actuator/**",
             "/error/**",
             "/api/users/register/**",
-            "/api/auth/**" // Consolidated authentication paths for login, refresh, and logout
+            "/api/auth/**", // Consolidated authentication paths for login, refresh, and logout
+            "/api/timezones/**"
     };
 
     /**

@@ -1,8 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.PendingAdminInviteDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.PendingAdminInviteDto;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitation;
 import reactor.core.publisher.Mono;

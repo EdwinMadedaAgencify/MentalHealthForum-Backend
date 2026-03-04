@@ -1,6 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UpdateUserProfileRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
 import reactor.core.publisher.Mono;
 

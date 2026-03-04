@@ -1,8 +1,6 @@
-package com.mentalhealthforum.mentalhealthforum_backend.dto;
+package com.mentalhealthforum.mentalhealthforum_backend.dto.verification;
 
 import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
-
-import java.util.Map;
 
 public record VerificationDto(
         VerificationType type,  // INVITED or SELF_REG

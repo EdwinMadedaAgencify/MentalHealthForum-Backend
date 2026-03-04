@@ -1,4 +1,4 @@
-package com.mentalhealthforum.mentalhealthforum_backend.dto;
+package com.mentalhealthforum.mentalhealthforum_backend.dto.verification;
 
 import com.mentalhealthforum.mentalhealthforum_backend.validation.ValidEmail;
 import jakarta.validation.constraints.NotBlank;

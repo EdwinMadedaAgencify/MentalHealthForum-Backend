@@ -1,6 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.ForgotPasswordRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.user.*;
 import com.mentalhealthforum.mentalhealthforum_backend.model.PendingUser;
 import reactor.core.publisher.Mono;
 

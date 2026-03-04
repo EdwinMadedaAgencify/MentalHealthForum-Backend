@@ -1,15 +1,13 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.FrontendProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.VerificationDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.verification.VerificationDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.AppUserVerificationPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.InvitationLinkRenewalPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.SelfRegPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.NovuWorkflow;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidTokenException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PendingRegistrationNotFoundException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.*;
@@ -25,7 +23,6 @@ import reactor.core.scheduler.Schedulers;
 
 
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Set;
 
 import static com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType.INVITED;

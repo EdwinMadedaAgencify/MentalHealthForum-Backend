@@ -2,11 +2,10 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.JwtResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.LoginRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.JwtResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;

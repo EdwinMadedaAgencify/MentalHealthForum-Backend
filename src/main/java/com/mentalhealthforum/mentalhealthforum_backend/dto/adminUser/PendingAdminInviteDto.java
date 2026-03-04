@@ -1,7 +1,5 @@
-package com.mentalhealthforum.mentalhealthforum_backend.dto;
+package com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 
 import java.time.Instant;
