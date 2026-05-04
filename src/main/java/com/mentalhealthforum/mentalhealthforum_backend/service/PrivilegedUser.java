@@ -1,9 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.onboarding.OnboardingPolicy;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.GroupPath;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.RealmRole;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,7 +10,7 @@ import java.util.Set;
 
 /**
  * Interface defining privilege-checking behavior for users.
- * Implemented by both database entities (AppUser) and JWT-based contexts (ViewerContext).
+ * Implemented by both database entities (AppUserEntity) and JWT-based contexts (ViewerContext).
  * Contains shared logic for role and group-based privilege checks.
  */
 public interface PrivilegedUser {

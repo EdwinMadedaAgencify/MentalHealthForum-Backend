@@ -4,7 +4,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.OtpPurpose;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidTokenException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.TokenExpiredException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.TooManyRequestsException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.OtpCredential;
+import com.mentalhealthforum.mentalhealthforum_backend.model.OtpCredentialEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.OtpCredentialRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -42,7 +42,7 @@ public class OtpWorkerImpl implements  OtpWorker{
                 })
                 .then(Mono.defer(() -> {
                     String rawCode = String.format("%06d", secureRandom.nextInt(1000000));
-                    OtpCredential newOtp = new OtpCredential(
+                    OtpCredentialEntity newOtp = new OtpCredentialEntity(
                             null,
                             email,
                             passwordEncoder.encode(rawCode),

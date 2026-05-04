@@ -1,13 +1,13 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.InviterDto;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.InviterDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.KeycloakUserDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.PendingAdminInviteDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.PendingAdminInviteDto;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitation;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.VerificationTokenRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AdminInvitationService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
@@ -49,10 +49,10 @@ public class AdminInvitationServiceImpl implements AdminInvitationService {
     }
 
     @Override
-    public Mono<AdminInvitation> createInvitation(KeycloakUserDto keycloakUserDto, String invitedById){
+    public Mono<AdminInvitationEntity> createInvitation(KeycloakUserDto keycloakUserDto, String invitedById){
         List<String> groups = adminManager.getUserGroups(keycloakUserDto.userId());
 
-        AdminInvitation adminInvitation = new AdminInvitation(
+        AdminInvitationEntity adminInvitation = new AdminInvitationEntity(
                 keycloakUserDto.userId(),
                 keycloakUserDto.email(),
                 keycloakUserDto.username(),
@@ -66,7 +66,7 @@ public class AdminInvitationServiceImpl implements AdminInvitationService {
     }
 
     @Override
-    public Mono<AdminInvitation> updateInvitation(KeycloakUserDto keycloakUserDto){
+    public Mono<AdminInvitationEntity> updateInvitation(KeycloakUserDto keycloakUserDto){
         List<String> groups = adminManager.getUserGroups(keycloakUserDto.userId());
         return adminInvitationRepository.findByKeycloakId(UUID.fromString(keycloakUserDto.userId()))
                 .flatMap(existing -> {

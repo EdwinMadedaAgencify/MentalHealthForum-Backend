@@ -70,7 +70,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         log.info("Keycloak Admin Client initialized successfully.");
     }
 
-    // --- AppUser Lookup Operations (Now returning KeycloakUserDto) ---
+    // --- AppUserEntity Lookup Operations (Now returning KeycloakUserDto) ---
 
     @Override
     public Optional<UserRepresentation> findUserByUserId(String userId) {
@@ -117,7 +117,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
         return getUsersResource().list();
     }
 
-    // --- AppUser Management Operations ---
+    // --- AppUserEntity Management Operations ---
 
     /**
      * Creates a user in Keycloak and returns the newly generated ID.
@@ -136,7 +136,7 @@ public class KeycloakAdminManagerImpl implements KeycloakAdminManager {
             return CreatedResponseUtil.getCreatedId(response);
         } catch (BadRequestException e) {
             log.error("Keycloak user creation failed with a BadRequest.", e);
-            throw new RuntimeException("AppUser creation failed due to a policy violation.", e);
+            throw new RuntimeException("AppUserEntity creation failed due to a policy violation.", e);
         }
     }
 

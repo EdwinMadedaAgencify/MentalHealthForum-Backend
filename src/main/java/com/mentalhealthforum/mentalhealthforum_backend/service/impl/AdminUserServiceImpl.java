@@ -1,15 +1,15 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.AdminCreateUserRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.AdminCreateUserResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.AdminUpdateUserRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.adminUser.ReissueInvitationRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.AdminCreateUserRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.AdminCreateUserResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.AdminUpdateUserRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.ReissueInvitationRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.AdminInvitePayload;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.KeycloakUserDto;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.*;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.*;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;

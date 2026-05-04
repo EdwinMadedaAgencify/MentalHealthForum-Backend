@@ -1,8 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.ForgotPasswordRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.*;
-import com.mentalhealthforum.mentalhealthforum_backend.model.PendingUser;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.auth.ForgotPasswordRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.*;
+import com.mentalhealthforum.mentalhealthforum_backend.model.PendingUserEntity;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -23,7 +23,7 @@ public interface UserService {
      */
     Mono<String> createUserInStaging(RegisterUserRequest registerUserRequest);
 
-    Mono<KeycloakUserDto> createUserInKeycloak(PendingUser pendingUser, String groupPath);
+    Mono<KeycloakUserDto> createUserInKeycloak(PendingUserEntity pendingUser, String groupPath);
 
     /**
      * Retrieves a user's details by their ID.

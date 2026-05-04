@@ -12,7 +12,7 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "The request method is not supported for this endpoint."),
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "The requested media type is not supported for this endpoint."),
 
-    // --- Authentication/AppUser Management Errors ---
+    // --- Authentication/AppUserEntity Management Errors ---
     USER_ALREADY_EXISTS(HttpStatus.CONFLICT, "An account already exists with this username or email."),
     USER_DOES_NOT_EXIST(HttpStatus.NOT_FOUND, "The requested user account was not found."),
 
@@ -32,7 +32,7 @@ public enum ErrorCode {
     // --- Username Error ---
     USERNAME_GENERATION_FAILED(HttpStatus.BAD_REQUEST, "Could not generate a valid username from the provided names. Please provide a username manually."),
 
-    // --- AppUser / Onboarding Errors ---
+    // --- AppUserEntity / Onboarding Errors ---
     USER_NOT_READY(HttpStatus.FORBIDDEN, "User has not completed the onboarding process."),
     INVITATION_ALREADY_VERIFIED(HttpStatus.CONFLICT, "User has already verified their email. The invitation phase is complete."),
     USER_ALREADY_ACTIVE(HttpStatus.CONFLICT, "User is already fully onboarded and active in the system."),
@@ -45,6 +45,17 @@ public enum ErrorCode {
     // --- Password/Policy Errors ---
     PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "Password does not meet required complexity standards."),
     PASSWORD_CONFIRM_MISMATCH(HttpStatus.BAD_REQUEST, "Password and Confirmation do not match."),
+
+
+    // - ForumCategories Hierarchical & Tagged
+    // Add to ErrorCode.java
+    DUPLICATE_CATEGORY_NAME(HttpStatus.CONFLICT, "A category with this name already exists"),
+    DUPLICATE_CATEGORY_SLUG(HttpStatus.CONFLICT, "A category with this slug already exists"),
+    TAG_ALREADY_EXISTS(HttpStatus.CONFLICT, "This tag already exists on the category"),
+    INVALID_HIERARCHY(HttpStatus.BAD_REQUEST, "Invalid category hierarchy operation"),
+    TAG_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested tag was not found"),
+    INVALID_SLUG_GENERATION(HttpStatus.BAD_REQUEST, "Could not generate slug from the provided name"),
+    UNABLE_TO_GENERATE_UNIQUE_SLUG(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to generate unique slug after multiple attempts"),
 
     // --- Pagination Error ---
     INVALID_PAGINATION(HttpStatus.BAD_REQUEST, "Invalid pagination parameters. Page and size must be valid and positive."),

@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.timezone.TimezonesResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.timezone.TimezonesResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.service.TimezoneService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

@@ -4,14 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.JwtResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.LoginRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.auth.JwtResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.auth.LoginRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.AuthenticationFailedException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserActionRequiredException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AuthService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,7 +86,7 @@ public class AuthServiceImpl implements AuthService {
         formData.add("client_id", clientId);
         formData.add("client_secret", clientSecret);
 
-        // 2. AppUser Credentials
+        // 2. AppUserEntity Credentials
         formData.add("username", request.username());
         formData.add("password", request.password());
 

@@ -1,23 +1,23 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
-import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
- * Reactive Repository for the application's internal AppUser profiles (R2DBC).
+ * Reactive Repository for the application's internal AppUserEntity profiles (R2DBC).
  */
-public interface AppUserRepository extends R2dbcRepository<AppUser, String> {
+@Repository
+public interface AppUserRepository extends R2dbcRepository<AppUserEntity, String> {
 
-    Mono<AppUser> findAppUserByKeycloakId(String keycloakId);
+    Mono<AppUserEntity> findAppUserByKeycloakId(String keycloakId);
 
     @Modifying
     @Query("""
@@ -73,7 +73,7 @@ public interface AppUserRepository extends R2dbcRepository<AppUser, String> {
                 keycloak_id
             LIMIT :limit OFFSET :offset;
            """)
-    Flux<AppUser> findAllPaginated(
+    Flux<AppUserEntity> findAllPaginated(
             @Param("isActive") Boolean isActive,
             @Param("role") String role,
             @Param("groups") String[] groups,

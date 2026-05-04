@@ -1,14 +1,14 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.timezone.TimezoneDetails;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.timezone.TimezoneDetails;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import org.springframework.stereotype.Component;
 
 /**
- * Maps {@link AppUser} entities to {@link UserResponse} DTOs with context-aware
+ * Maps {@link AppUserEntity} entities to {@link UserResponse} DTOs with context-aware
  * privacy rules. Differentiates between:
  * <ul>
  *   <li>Self-view: All fields exposed</li>
@@ -49,7 +49,7 @@ public class UserResponseMapper {
      * @param targetUser The user entity to map
      * @return UserResponse with only public fields (no sensitive data)
      */
-    public UserResponse toPublicUserResponse(AppUser targetUser){
+    public UserResponse toPublicUserResponse(AppUserEntity targetUser){
         // Map ONLY always-public fields
         UserResponse userResponse = new UserResponse(
                 targetUser.getKeycloakId(),  // Using keycloakId as email in response
@@ -76,7 +76,7 @@ public class UserResponseMapper {
      * @param targetUser The user entity to map (viewing themselves)
      * @return Complete UserResponse with all fields, including sensitive data
      */
-    public UserResponse toSelfResponse(AppUser targetUser){
+    public UserResponse toSelfResponse(AppUserEntity targetUser){
         UserResponse response = toPublicUserResponse(targetUser);
         response.setSelf(true);
 
@@ -118,7 +118,7 @@ public class UserResponseMapper {
      * @param viewerContext The viewer's context (privileges, relationship to target)
      * @return Privacy-filtered UserResponse appropriate for the viewer
      */
-    public UserResponse toOthersResponse(AppUser targetUser, ViewerContext viewerContext){
+    public UserResponse toOthersResponse(AppUserEntity targetUser, ViewerContext viewerContext){
         // START with PUBLIC fields only
         UserResponse response =  toPublicUserResponse(targetUser);
         response.setSelf(false);
@@ -148,7 +148,7 @@ public class UserResponseMapper {
      * @param viewerContext The viewer's context, null for unauthenticated access
      * @return Appropriately filtered UserResponse based on context
      */
-    public UserResponse mapUserBasedOnContext(AppUser targetUser, ViewerContext viewerContext) {
+    public UserResponse mapUserBasedOnContext(AppUserEntity targetUser, ViewerContext viewerContext) {
         if(viewerContext == null){
             // Unauthenticated access - return minimal public info
             return toPublicUserResponse(targetUser);
@@ -174,7 +174,7 @@ public class UserResponseMapper {
      * Builds response for admin/moderator users with transparency rules applied.
      * Admins/moderators are always identifiable regardless of their profile setting.
      */
-    private UserResponse buildAdminModeratorResponse(UserResponse baseResponse, AppUser targetUser, boolean isViewerPrivileged){
+    private UserResponse buildAdminModeratorResponse(UserResponse baseResponse, AppUserEntity targetUser, boolean isViewerPrivileged){
 
         // Core identity - always visible
         baseResponse.setDisplayName(targetUser.getDisplayName());
@@ -212,7 +212,7 @@ public class UserResponseMapper {
     /**
      * Builds response for regular users based on their profile visibility setting.
      */
-    private UserResponse buildRegularUserResponse(UserResponse baseResponse, AppUser targetUser, boolean isViewerPrivileged){
+    private UserResponse buildRegularUserResponse(UserResponse baseResponse, AppUserEntity targetUser, boolean isViewerPrivileged){
         switch (targetUser.getProfileVisibility()){
             case MEMBERS_ONLY:
                return buildMembersOnlyResponse(baseResponse, targetUser, isViewerPrivileged);
@@ -225,7 +225,7 @@ public class UserResponseMapper {
      * Builds response for users with MEMBERS_ONLY profile visibility.
      * Shows profile details to all authenticated members.
      */
-    private UserResponse buildMembersOnlyResponse(UserResponse baseResponse, AppUser targetUser, boolean isViewerPrivileged){
+    private UserResponse buildMembersOnlyResponse(UserResponse baseResponse, AppUserEntity targetUser, boolean isViewerPrivileged){
         // Show profile details to members
         baseResponse.setFirstName(targetUser.getFirstName());
         baseResponse.setLastName( targetUser.getLastName());
@@ -252,7 +252,7 @@ public class UserResponseMapper {
      * Builds response for users with PRIVATE profile visibility.
      * Shows minimal information to protect user privacy.
      */
-    private UserResponse buildPrivateResponse(UserResponse baseResponse, AppUser targetUser, boolean isViewerPrivileged){
+    private UserResponse buildPrivateResponse(UserResponse baseResponse, AppUserEntity targetUser, boolean isViewerPrivileged){
         // Regular users with private profile - minimal info
         baseResponse.setFirstName(null);
         baseResponse.setLastName(null);

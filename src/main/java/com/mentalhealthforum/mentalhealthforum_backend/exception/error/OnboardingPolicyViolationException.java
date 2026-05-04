@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.exception.error;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ErrorDetail;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.onboarding.OnboardingPolicy;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 
 import java.util.List;

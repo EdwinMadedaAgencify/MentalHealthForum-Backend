@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.JwtResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.auth.LoginRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.auth.JwtResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.auth.LoginRequest;
 import reactor.core.publisher.Mono;
 
 public interface AuthService {

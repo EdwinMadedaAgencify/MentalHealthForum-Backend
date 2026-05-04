@@ -1,8 +1,8 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto;
 
 import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.service.PrivilegedUser;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import lombok.Getter;
 
 import java.util.Set;
@@ -10,7 +10,7 @@ import java.util.Set;
 /**
  * Immutable DTO representing the authenticated viewer's context extracted from JWT.
  * Implements {@link PrivilegedUser} to provide the same privilege-checking API
- * as {@link AppUser} but without database dependency.
+ * as {@link AppUserEntity} but without database dependency.
  *
  * <p>Used to pass viewer's identity and privileges to service methods
  * for context-aware operations (like privacy-aware user profile fetching).

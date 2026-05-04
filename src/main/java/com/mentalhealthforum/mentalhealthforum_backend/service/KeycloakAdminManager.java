@@ -17,7 +17,7 @@ import java.util.Optional;
  */
 public interface KeycloakAdminManager {
 
-    // --- AppUser Lookup Operations (Returning DTOs) ---
+    // --- AppUserEntity Lookup Operations (Returning DTOs) ---
 
     Optional<UserRepresentation> findUserByUserId(String userId);
 
@@ -33,7 +33,7 @@ public interface KeycloakAdminManager {
 
     List<UserRepresentation> listAllUsers();
 
-    // --- AppUser Management Operations ---
+    // --- AppUserEntity Management Operations ---
 
     String createUser(UserRepresentation user);
 

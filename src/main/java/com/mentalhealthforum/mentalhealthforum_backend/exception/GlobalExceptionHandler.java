@@ -107,7 +107,7 @@ public class GlobalExceptionHandler {
                 ErrorCode.UNSUPPORTED_MEDIA_TYPE.getDescription(),
                 ErrorCode.UNSUPPORTED_MEDIA_TYPE,
                 path,
-                List.of(new ErrorDetail("ContentType", ex.getMessage()))
+                List.of(new ErrorDetail("ContentWarningType", ex.getMessage()))
         );
         return Mono.just(ResponseEntity.status(ErrorCode.UNSUPPORTED_MEDIA_TYPE.getHttpStatus()).body(response));
     }

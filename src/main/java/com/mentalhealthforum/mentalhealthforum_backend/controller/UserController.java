@@ -1,13 +1,11 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.RegisterUserRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.ResetPasswordRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UpdateUserProfileRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.RegisterUserRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.ResetPasswordRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.UpdateUserProfileRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InsufficientPermissionException;
-import com.mentalhealthforum.mentalhealthforum_backend.exception.error.OnboardingPolicyViolationException;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserService;

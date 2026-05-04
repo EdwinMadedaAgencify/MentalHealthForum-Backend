@@ -6,7 +6,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.NovuPreferenceRe
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.NovuSubscriberRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.NovuTriggerRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.NovuWorkflow;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.service.NovuPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.service.NovuService;
 import org.slf4j.Logger;
@@ -83,7 +83,7 @@ public class NovuServiceImpl implements NovuService {
                 });
     }
 
-    public Mono<Void> upsertSubscriber(AppUser appUser){
+    public Mono<Void> upsertSubscriber(AppUserEntity appUser){
         // Create the record
         var request = new NovuSubscriberRequest(
                 appUser.getKeycloakId().toString(),

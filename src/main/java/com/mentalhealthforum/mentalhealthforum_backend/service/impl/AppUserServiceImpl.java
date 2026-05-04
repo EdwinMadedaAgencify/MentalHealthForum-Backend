@@ -2,19 +2,20 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.KeycloakProperties;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.*;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.onboarding.OnboardingPolicy;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.KeycloakUserDto;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UpdateUserProfileRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.user.UserResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.onboarding.OnboardingPolicy;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.KeycloakUserDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.UpdateUserProfileRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.UserInfoDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user.UserResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.*;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.VerificationTokenRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AdminInvitationService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserResponseMapper;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
@@ -105,7 +106,7 @@ public class AppUserServiceImpl implements AppUserService {
     @Override
     public Mono<UserResponse> syncUserViaAdminClient(KeycloakUserDto keycloakUserDto, ViewerContext viewerContext){
         //  Create the base object (No I/O here, just memory)
-        AppUser userDetails = new AppUser(
+        AppUserEntity userDetails = new AppUserEntity(
                 keycloakUserDto.userId(),
                 keycloakUserDto.email(),
                 keycloakUserDto.username(),
@@ -163,7 +164,7 @@ public class AppUserServiceImpl implements AppUserService {
                                                 return Mono.empty();
                                             }
                                             // GATEKEEPER: READY (Atomic Transition)
-                                            log.info("User {} cleared all hurdles. Transitioning to AppUser.", keycloakUserDto.userId());
+                                            log.info("User {} cleared all hurdles. Transitioning to AppUserEntity.", keycloakUserDto.userId());
 //                                            userDetails.setBio(generateDefaultBio(keycloakUserDto.firstName(), keycloakUserDto.lastName()));
 
                                             return appUserRepository.save(userDetails)
@@ -240,7 +241,7 @@ public class AppUserServiceImpl implements AppUserService {
     /**
      * Step 2: Uses the authoritative DTO to find the user in the database or create a new one.
      */
-    private Mono<AppUser> findOrCreateUser(UserInfoDto userInfoDto) {
+    private Mono<AppUserEntity> findOrCreateUser(UserInfoDto userInfoDto) {
         // Look up the user by the Keycloak ID (sub)
         return appUserRepository.findAppUserByKeycloakId(userInfoDto.keycloakId())
                 .flatMap(existingUser -> {
@@ -254,7 +255,7 @@ public class AppUserServiceImpl implements AppUserService {
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Create: User is logging in for the first time
-                    AppUser newAppUser = new AppUser(
+                    AppUserEntity newAppUser = new AppUserEntity(
                             userInfoDto.keycloakId(),
                             userInfoDto.email(),
                             userInfoDto.preferredUsername(),
@@ -347,7 +348,7 @@ public class AppUserServiceImpl implements AppUserService {
         // Only apply current user first on page 0
         boolean applyCurrentUserFirst = currentUserFirst && page == 0;
 
-        Flux<AppUser> appUsersFlux = appUserRepository.findAllPaginated(
+        Flux<AppUserEntity> appUsersFlux = appUserRepository.findAllPaginated(
                 isActive, role, effectiveGroups,currentUserId, applyCurrentUserFirst, normalizedSortBy, normalizedDirection, effectiveSearch, size, offset
         );
 
@@ -355,7 +356,7 @@ public class AppUserServiceImpl implements AppUserService {
 
         return Mono.zip(appUsersFlux.collectList(), totalCount)
                 .map(tuple -> {
-                    List<AppUser> appUsers = tuple.getT1();
+                    List<AppUserEntity> appUsers = tuple.getT1();
                     long total = tuple.getT2();
 
                     List<UserResponse> content = appUsers.stream()
@@ -440,17 +441,6 @@ public class AppUserServiceImpl implements AppUserService {
                                 appUser.getProfileVisibility(),
                                 appUser::setProfileVisibility);
 
-//                        localNeedsUpdate |= setIfChangedAllowNull(
-//                                updateUserProfileRequest.supportRole(),
-//                                appUser.supportRole(),
-//                                appUser::setSupportRole);
-
-                        // Notification preferences (JSON-backed object)
-//                        localNeedsUpdate |= setIfChangedAllowNull(
-//                                updateUserProfileRequest.notificationPreferences(),
-//                                appUser.getNotificationPreferences(),
-//                                appUser::setNotificationPreferences);
-
                     // --- Persist only if any changes ---
                     return localNeedsUpdate ? appUserRepository.save(appUser) : Mono.just(appUser);
                 })
@@ -522,7 +512,7 @@ public class AppUserServiceImpl implements AppUserService {
         return Mono.just(updateUserProfileRequest);
     }
 
-    private Mono<Void> evaluateOnboardingPolicyCompliance(AppUser appUser, ViewerContext viewerContext){
+    private Mono<Void> evaluateOnboardingPolicyCompliance(AppUserEntity appUser, ViewerContext viewerContext){
        return Mono.fromRunnable(()-> {
                    String userId = String.valueOf(appUser.getKeycloakId());
 
@@ -545,10 +535,10 @@ public class AppUserServiceImpl implements AppUserService {
     }
 
     /**
-     * Enriches the AppUser model with transient metadata from active verification tokens.
+     * Enriches the AppUserEntity model with transient metadata from active verification tokens.
      * This ensures the 'pendingEmail' field is populated across all retrieval and sync flows.
      */
-    private Mono<AppUser> enrichWithPendingEmail(AppUser appUser){
+    private Mono<AppUserEntity> enrichWithPendingEmail(AppUserEntity appUser){
         //If the user hasn't been saved yet (no email), just return
         if(appUser.getEmail() == null){
             return Mono.just(appUser);

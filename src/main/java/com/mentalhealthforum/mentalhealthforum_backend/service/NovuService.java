@@ -2,7 +2,7 @@ package com.mentalhealthforum.mentalhealthforum_backend.service;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.notification.NotificationPreferences;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.NovuWorkflow;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUser;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import reactor.core.publisher.Mono;
 
 public interface NovuService {
@@ -24,7 +24,7 @@ public interface NovuService {
     /**
      * Creates or updates a subscriber's profile information in Novu.
      */
-    Mono<Void> upsertSubscriber(AppUser appUser);
+    Mono<Void> upsertSubscriber(AppUserEntity appUser);
 
     /**
      * Synchronizes local notification preferences with Novu's settings.

@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.timezone.TimezoneDetails;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.timezone.TimezonesResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.timezone.TimezoneDetails;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.timezone.TimezonesResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.service.TimezoneService;
 import com.mentalhealthforum.mentalhealthforum_backend.validation.timezone.TimezoneValidator;
 import org.springframework.stereotype.Service;

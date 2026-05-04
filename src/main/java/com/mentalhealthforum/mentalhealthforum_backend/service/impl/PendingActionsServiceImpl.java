@@ -1,6 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.authStatus.PendingActionsResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.authStatus.PendingActionsResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.service.ActionDescriptions;
 import com.mentalhealthforum.mentalhealthforum_backend.service.KeycloakAdminManager;
 import com.mentalhealthforum.mentalhealthforum_backend.service.PendingActionsService;

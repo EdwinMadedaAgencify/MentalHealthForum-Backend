@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.config.FrontendProperties;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.verification.VerificationDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.verification.VerificationDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.AppUserVerificationPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.InvitationLinkRenewalPayload;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.novu.SelfRegPayload;
@@ -11,6 +11,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.PendingRegistrationNotFoundException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.UserDoesNotExistException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.*;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.PendingUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.*;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -90,7 +91,7 @@ public class VerificationServiceImpl implements VerificationService {
     }
 
 
-    private Mono<Void> triggerInviteRenewal(AdminInvitation adminInvitation){
+    private Mono<Void> triggerInviteRenewal(AdminInvitationEntity adminInvitation){
         String path =  GroupPath.MEMBERS_NEW.getPath();
         Set<String> groups = adminInvitation.getGroups();
 
@@ -165,7 +166,7 @@ public class VerificationServiceImpl implements VerificationService {
     }
 
 
-    private Mono<Void> triggerSelfRegRenewal(PendingUser pendingUser) {
+    private Mono<Void> triggerSelfRegRenewal(PendingUserEntity pendingUser) {
         return createVerificationLink(
                     pendingUser.email(),
                     SELF_REG,
@@ -201,7 +202,7 @@ public class VerificationServiceImpl implements VerificationService {
             String targetEmail
     ){}
 
-    private Mono<VerificationDto> finalizeExistingAppUser(VerificationToken verificationToken) {
+    private Mono<VerificationDto> finalizeExistingAppUser(VerificationTokenEntity verificationToken) {
         return Mono.fromCallable(()->{
             UserRepresentation userRep = adminManager.findUserByEmail(verificationToken.getEmail())
                     .orElseThrow(()-> new UserDoesNotExistException("User not found for email change"));
@@ -243,7 +244,7 @@ public class VerificationServiceImpl implements VerificationService {
             String username
     ){}
 
-    private Mono<VerificationDto> finalizeInvitedUser(VerificationToken verificationToken) {
+    private Mono<VerificationDto> finalizeInvitedUser(VerificationTokenEntity verificationToken) {
         return Mono.fromCallable(()-> {
             // 1. Mark the user as verified in Keycloak (Blocking)
             adminManager.verifyUserEmail(verificationToken.getEmail());
@@ -268,7 +269,7 @@ public class VerificationServiceImpl implements VerificationService {
                         );
     }
 
-    private Mono<VerificationDto> finalizeSelfRegisteredUser(VerificationToken verificationToken) {
+    private Mono<VerificationDto> finalizeSelfRegisteredUser(VerificationTokenEntity verificationToken) {
         return pendingUserRepository.findByEmail(verificationToken.getEmail())
                 .switchIfEmpty(Mono.error(new PendingRegistrationNotFoundException()))
                 .flatMap(pendingUser -> {

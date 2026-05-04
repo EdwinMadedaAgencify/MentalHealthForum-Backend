@@ -2,10 +2,7 @@ package com.mentalhealthforum.mentalhealthforum_backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalhealthforum.mentalhealthforum_backend.config.r2dbcConverters.*;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.OtpPurpose;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
-import com.mentalhealthforum.mentalhealthforum_backend.enums.SupportRole;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
 import io.r2dbc.postgresql.codec.EnumCodec;
@@ -56,6 +53,7 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                         .withEnum("support_role_enum", SupportRole.class)
                         .withEnum("onboarding_stage_enum", OnboardingStage.class)
                         .withEnum("otp_purpose_enum", OtpPurpose.class)
+                        .withEnum("content_warning_enum", ContentWarningType.class)
                         .build())
                 .build();
     }
@@ -81,7 +79,9 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                 new OnboardingStageWritingConverter(),
                 new OnboardingStageReadingConverter(),
                 new OtpPurposeWritingConverter(),
-                new OtpPurposeReadingConverter()
+                new OtpPurposeReadingConverter(),
+                new ContentWarningTypeWritingConverter(),
+                new ContentWarningTypeReadingConverter()
         );
     }
 
@@ -99,6 +99,8 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
         converters.add(new OnboardingStageReadingConverter());
         converters.add(new OtpPurposeWritingConverter());
         converters.add(new OtpPurposeReadingConverter());
+        converters.add(new ContentWarningTypeWritingConverter());
+        converters.add(new ContentWarningTypeReadingConverter());
 
         // Add JSONB converters
         converters.add(new JsonNodeToJsonWriteConverter(objectMapper));
