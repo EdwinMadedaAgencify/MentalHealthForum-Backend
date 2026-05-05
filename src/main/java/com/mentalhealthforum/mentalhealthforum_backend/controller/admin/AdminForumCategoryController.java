@@ -3,7 +3,6 @@ package com.mentalhealthforum.mentalhealthforum_backend.controller.admin;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.SlugGenerationResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.CreateForumCategoryRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryHierarchyDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryTagRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.UpdateForumCategoryRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
@@ -14,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -26,13 +26,56 @@ public class AdminForumCategoryController {
         this.forumCategoryService = forumCategoryService;
     }
 
-    // ==================== CATEGORY ENDPOINTS ====================
+    // ==================== UTILITY ENDPOINTS ====================
+
+    @GetMapping("/generate-slug")
+    public Mono<StandardSuccessResponse<SlugGenerationResponse>> generateSlug(
+            @RequestParam String name,
+            @RequestParam(required = false) UUID excludeCategoryId) {
+        return forumCategoryService.generateSlug(name, excludeCategoryId)
+                .map(response -> new StandardSuccessResponse<>(
+                        response.available() ? "Slug available" : "Slug not available, suggested alternative",
+                        response
+                ));
+    }
+
+    // ==================== CATEGORY CRUD ====================
 
     @PostMapping
     public Mono<StandardSuccessResponse<ForumCategoryEntity>> createCategory(
             @Valid @RequestBody CreateForumCategoryRequest request) {
         return forumCategoryService.createCategory(request)
                 .map(category -> new StandardSuccessResponse<>("Category created successfully", category));
+    }
+
+    @GetMapping("/all")
+    public Mono<StandardSuccessResponse<List<ForumCategoryEntity>>> getAllCategories() {
+        return forumCategoryService.getAllCategories()
+                .collectList()
+                .map(categories -> new StandardSuccessResponse<>("All categories retrieved", categories));
+    }
+
+    @GetMapping
+    public Mono<StandardSuccessResponse<List<ForumCategoryEntity>>> getAllActiveCategories() {
+        return forumCategoryService.getAllActiveCategories()
+                .collectList()
+                .map(categories -> new StandardSuccessResponse<>("Active categories retrieved", categories));
+    }
+
+    @GetMapping("/inactive")
+    public Mono<StandardSuccessResponse<List<ForumCategoryEntity>>> getInactiveCategories() {
+        return forumCategoryService.getInactiveCategories()
+                .collectList()
+                .map(categories -> new StandardSuccessResponse<>("Inactive categories retrieved", categories));
+    }
+
+    @GetMapping("/inactive/count")
+    public Mono<StandardSuccessResponse<Map<String, Long>>> getInactiveCount() {
+        return forumCategoryService.getInactiveCount()
+                .map(count -> new StandardSuccessResponse<>(
+                        "Inactive categories count retrieved",
+                        Map.of("inactiveCount", count)
+                ));
     }
 
     @PutMapping("/{id}")
@@ -43,14 +86,39 @@ public class AdminForumCategoryController {
                 .map(category -> new StandardSuccessResponse<>("Category updated successfully", category));
     }
 
-    @DeleteMapping("/{id}")
-    public Mono<StandardSuccessResponse<Void>> deleteCategory(@PathVariable UUID id) {
-        return forumCategoryService.deleteCategory(id)
-                .then(Mono.just(new StandardSuccessResponse<>("Category deleted successfully")));
+    @PutMapping("/{id}/reactivate")
+    public Mono<StandardSuccessResponse<ForumCategoryEntity>> reactivateCategory(@PathVariable UUID id) {
+        return forumCategoryService.reactivateCategory(id)
+                .map(category -> new StandardSuccessResponse<>("Category reactivated successfully", category));
     }
 
+    @DeleteMapping("/{id}")
+    public Mono<StandardSuccessResponse<Void>> softDeleteCategory(@PathVariable UUID id) {
+        return forumCategoryService.softDeleteCategory(id)
+                .then(Mono.just(new StandardSuccessResponse<>("Category soft deleted successfully")));
+    }
+
+    @DeleteMapping("/{id}/purge")
+    public Mono<StandardSuccessResponse<Void>> purgeCategory(@PathVariable UUID id) {
+        return forumCategoryService.purgeCategory(id)
+                .then(Mono.just(new StandardSuccessResponse<>("Category permanently purged successfully")));
+    }
+
+    @DeleteMapping("/purge-old")
+    public Mono<StandardSuccessResponse<Void>> purgeOldCategories(@RequestParam(defaultValue = "90") int daysOld) {
+        return forumCategoryService.purgeOldInactiveCategories(daysOld)
+                .then(Mono.just(new StandardSuccessResponse<>(
+                        String.format("Categories inactive for more than %d days purged", daysOld))));
+    }
 
     // ==================== TAG ENDPOINTS ====================
+
+    @GetMapping("/{categoryId}/tags")
+    public Mono<StandardSuccessResponse<List<ForumCategoryTagEntity>>> getTags(@PathVariable UUID categoryId) {
+        return forumCategoryService.getTags(categoryId)
+                .collectList()
+                .map(tags -> new StandardSuccessResponse<>("Tags retrieved successfully", tags));
+    }
 
     @PostMapping("/{categoryId}/tags")
     public Mono<StandardSuccessResponse<ForumCategoryTagEntity>> addTag(
@@ -83,16 +151,5 @@ public class AdminForumCategoryController {
             @RequestBody List<ForumCategoryTagRequest> tags) {
         return forumCategoryService.replaceTags(categoryId, tags)
                 .then(Mono.just(new StandardSuccessResponse<>("Tags replaced successfully")));
-    }
-
-    @GetMapping("/generate-slug")
-    public Mono<StandardSuccessResponse<SlugGenerationResponse>> generateSlug(
-            @RequestParam String name,
-            @RequestParam(required = false) UUID excludeCategoryId) {
-        return forumCategoryService.generateSlug(name, excludeCategoryId)
-                .map(response -> new StandardSuccessResponse<>(
-                        response.available() ? "Slug available" : "Slug not available, suggested alternative",
-                        response
-                ));
     }
 }

@@ -21,10 +21,18 @@ public interface ForumCategoryService {
     // Category CRUD
     Mono<ForumCategoryEntity> createCategory(CreateForumCategoryRequest request);
     Mono<ForumCategoryEntity> updateCategory(UUID id, UpdateForumCategoryRequest request);
-    Mono<Void> deleteCategory(UUID id);
+    Mono<Void> softDeleteCategory(UUID id);  // Changed from deleteCategory
+    Mono<ForumCategoryEntity> reactivateCategory(UUID id);
+
+    Mono<Void> purgeCategory(UUID id);
+    Mono<Void> purgeOldInactiveCategories(int daysOld);
+
     Mono<ForumCategoryEntity> getCategoryById(UUID id);
     Mono<ForumCategoryEntity> getCategoryBySlug(String slug);
     Flux<ForumCategoryEntity> getAllActiveCategories();
+    Flux<ForumCategoryEntity> getAllCategories();
+    Flux<ForumCategoryEntity> getInactiveCategories();
+    Mono<Long> getInactiveCount();
 
     // Hierarchy
     Flux<ForumCategoryHierarchyDto> getCategoryHierarchy();

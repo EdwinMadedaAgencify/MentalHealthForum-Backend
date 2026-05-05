@@ -3,10 +3,12 @@ package com.mentalhealthforum.mentalhealthforum_backend.repository;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Repository
@@ -14,6 +16,19 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
     Mono<ForumCategoryEntity> findBySlug(String slug);
 
     Flux<ForumCategoryEntity> findByIsActiveTrueOrderBySortOrderAsc();
+
+    Flux<ForumCategoryEntity> findByIsActiveFalse();
+
+    Mono<Long> countByIsActiveFalse();
+
+    @Query("""
+        SELECT c.* FROM forum_categories c
+        WHERE c.is_active = false
+        AND c.created_at < :cutoffDate
+        ORDER BY c.created_at ASC
+    """)
+    Flux<ForumCategoryEntity> findInactiveCategoriesOlderThan(@Param("cutoffDate") Instant cutoffDate);
+
 
     @Query("""
         SELECT c.* FROM forum_categories c
@@ -48,7 +63,7 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
         SELECT CASE WHEN COUNT(*) > 0 THEN true ELSE false END
         FROM forum_categories
         WHERE slug = :slug
-        AND id != excludedCategoryId    
+        AND id != :excludedCategoryId
     """)
     Mono<Boolean> existsBySlugAndIdNot(String slug, UUID excludedCategoryId);
 }

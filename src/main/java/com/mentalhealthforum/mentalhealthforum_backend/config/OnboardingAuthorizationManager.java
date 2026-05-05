@@ -25,7 +25,9 @@ public class OnboardingAuthorizationManager implements ReactiveAuthorizationMana
                     // If onboarding, check the path
                     if(isOnboarding){
                         // Allow them to update their own profile to satisfy requirements
-                        if(path.startsWith("/api/users") || path.startsWith("/api/auth")){
+                        if(path.startsWith("/api/users") ||
+                            path.startsWith("/api/auth") ||
+                            path.startsWith("/api/onboarding")){
                             return new AuthorizationDecision(true);
                         }
 

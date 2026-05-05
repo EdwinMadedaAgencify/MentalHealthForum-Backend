@@ -1,6 +1,5 @@
 package com.mentalhealthforum.mentalhealthforum_backend.controller;
 
-import com.mentalhealthforum.mentalhealthforum_backend.dto.SlugGenerationResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryHierarchyDto;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
@@ -20,6 +19,27 @@ public class PublicForumCategoryController {
 
     public PublicForumCategoryController(ForumCategoryService forumCategoryService) {
         this.forumCategoryService = forumCategoryService;
+    }
+
+    // ==================== CATEGORY QUERIES ====================
+
+    @GetMapping
+    public Mono<StandardSuccessResponse<List<ForumCategoryEntity>>> getAllActiveCategories() {
+        return forumCategoryService.getAllActiveCategories()
+                .collectList()
+                .map(categories -> new StandardSuccessResponse<>("Categories retrieved", categories));
+    }
+
+    @GetMapping("/{id}")
+    public Mono<StandardSuccessResponse<ForumCategoryEntity>> getCategoryById(@PathVariable UUID id) {
+        return forumCategoryService.getCategoryById(id)
+                .map(category -> new StandardSuccessResponse<>("Category found", category));
+    }
+
+    @GetMapping("/slug/{slug}")
+    public Mono<StandardSuccessResponse<ForumCategoryEntity>> getCategoryBySlug(@PathVariable String slug) {
+        return forumCategoryService.getCategoryBySlug(slug)
+                .map(category -> new StandardSuccessResponse<>("Category found", category));
     }
 
     // ==================== HIERARCHY ENDPOINTS ====================
@@ -52,25 +72,5 @@ public class PublicForumCategoryController {
         return forumCategoryService.getTags(categoryId)
                 .collectList()
                 .map(tags -> new StandardSuccessResponse<>("Tags retrieved successfully", tags));
-    }
-
-
-    @GetMapping("/{id}")
-    public Mono<StandardSuccessResponse<ForumCategoryEntity>> getCategoryById(@PathVariable UUID id) {
-        return forumCategoryService.getCategoryById(id)
-                .map(category -> new StandardSuccessResponse<>("Category found", category));
-    }
-
-    @GetMapping("/slug/{slug}")
-    public Mono<StandardSuccessResponse<ForumCategoryEntity>> getCategoryBySlug(@PathVariable String slug) {
-        return forumCategoryService.getCategoryBySlug(slug)
-                .map(category -> new StandardSuccessResponse<>("Category found", category));
-    }
-
-    @GetMapping
-    public Mono<StandardSuccessResponse<List<ForumCategoryEntity>>> getAllActiveCategories() {
-        return forumCategoryService.getAllActiveCategories()
-                .collectList()
-                .map(categories -> new StandardSuccessResponse<>("Categories retrieved", categories));
     }
 }

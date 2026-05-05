@@ -16,12 +16,14 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.support.WebExchangeBindException; // Reactive Validation Exception
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.*;
 import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 
 @ControllerAdvice
@@ -286,6 +288,44 @@ public class GlobalExceptionHandler {
 
         return Mono.just(ResponseEntity.status(status != null? status: HttpStatus.INTERNAL_SERVER_ERROR).body(response));
     }
+    /**
+     * Handles ALL type conversion errors for query parameters and path variables
+     * Examples: invalid UUID, invalid number format, invalid enum value, etc.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public Mono<ResponseEntity<StandardErrorResponse>> handleMethodArgumentTypeMismatchException(
+            MethodArgumentTypeMismatchException ex,
+            ServerWebExchange exchange
+    ){
+        String path = getPath(exchange);
+        String paramName = ex.getName();
+        Object invalidValue =  ex.getValue();
+        Class<?> requiredType = ex.getRequiredType();
+
+
+        logger.warn("Type mismatch for parameter '{}' at path '{}': invalid value '{}', expected type: {}",
+                paramName, path, invalidValue, requiredType != null? requiredType.getSimpleName(): "unknown");
+
+        String expectedType = requiredType != null? requiredType.getSimpleName() : "valid value";
+        String userMessage = String.format("Invalid value '%s' for parameter '%s'. Expected a %s", invalidValue, paramName, expectedType);
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+
+        if(requiredType != null && requiredType.isEnum()){
+            String allowedValues = Arrays.toString(requiredType.getEnumConstants());
+            userMessage = String.format("Invalid value '%s' for parameter '%s'. Expected one of: %s", invalidValue, paramName, allowedValues);
+        }
+
+        StandardErrorResponse response = new StandardErrorResponse(
+                userMessage,
+                errorCode,
+                path,
+                List.of(new ErrorDetail(paramName, userMessage))
+        );
+
+        return Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response));
+    }
+
+
     /**
      * 8. Handle external service connection errors (Connection refused, host down, etc.)
      * Returns 503 Service Unavailable

@@ -19,18 +19,21 @@ public class DatabaseCleanupTask {
     private final OtpCredentialRepository otpCredentialRepository;
     private final VerificationTokenRepository verificationTokenRepository;
     private final PendingUserRepository pendingUserRepository;
+    private final ForumCategoryService forumCategoryService;
 
     public DatabaseCleanupTask(
             OtpCredentialRepository otpCredentialRepository,
             VerificationTokenRepository verificationTokenRepository,
-            PendingUserRepository pendingUserRepository) {
+            PendingUserRepository pendingUserRepository,
+            ForumCategoryService forumCategoryService) {
         this.otpCredentialRepository = otpCredentialRepository;
         this.verificationTokenRepository = verificationTokenRepository;
         this.pendingUserRepository = pendingUserRepository;
+        this.forumCategoryService = forumCategoryService;
     }
 
     // Runs at 3:00 AM every day
-    @Scheduled(cron = "0 0 3 * * *")
+    @Scheduled( cron = "0 0 3 * * *")
     public void cleanupExpiredOtps() {
         log.info("Cron: Initiating scheduled cleanup of expired OTP credentials...");
 
@@ -66,5 +69,16 @@ public class DatabaseCleanupTask {
                 .doOnError(e -> log.debug("Cron Failure: Failed to executed pending users token cleanup task: Reason: {}", e.getMessage()))
                 .block();
 
+    }
+
+    // Run at 2 AM daily
+    @Scheduled(cron = "0 0 2 * * ?")
+    public void purgeOldInactiveCategories(){
+        log.info("Starting scheduled purge of old inactive categories");
+        forumCategoryService.purgeOldInactiveCategories(90)
+                .subscribe(
+                        v -> log.info("Scheduled purge completed"),
+                        e -> log.error("Scheduled purge failed: {}", e.getMessage())
+                );
     }
 }

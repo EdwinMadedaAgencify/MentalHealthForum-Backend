@@ -1,7 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.SlugGenerationResponse;
-
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.CreateForumCategoryRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryHierarchyDto;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryTagRequest;
@@ -14,17 +13,24 @@ import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumCategoryR
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumCategoryTagRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.ForumCategoryService;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.SlugsUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-    
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 
 @Service
 public class ForumCategoryServiceImpl implements ForumCategoryService {
+
+    private static final Logger log = LoggerFactory.getLogger(ForumCategoryServiceImpl.class);
 
     private final TransactionalOperator transactionalOperator;
     private final ForumCategoryRepository forumCategoryRepository;
@@ -100,13 +106,17 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<Void> deleteCategory(UUID id) {
+    public Mono<Void> softDeleteCategory(UUID id) {
         return forumCategoryRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ApiException(
-                        "Category with id '"+ id +"' not found",
-                        ErrorCode.RESOURCE_NOT_FOUND
-                )))
+                        "Category with id '" + id + "' not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)))
                 .flatMap(category -> {
+                    if (!category.getIsActive()) {
+                        return Mono.error(new ApiException(
+                                "Category is already soft deleted",
+                                ErrorCode.VALIDATION_FAILED));
+                    }
                     category.setIsActive(false);
                     return forumCategoryRepository.save(category).then();
                 })
@@ -114,24 +124,135 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
+    public Mono<ForumCategoryEntity> reactivateCategory(UUID id) {
+        return forumCategoryRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Category not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)))
+                .flatMap(category -> {
+                    if (category.getIsActive()) {
+                        return Mono.error(new ApiException(
+                                "Category is already active",
+                                ErrorCode.VALIDATION_FAILED));
+                    }
+
+                    // Check if parent is active (if it has a parent)
+                    if (category.getParentCategoryId() != null) {
+                        // Prevent self-reference
+                        if (category.getParentCategoryId().equals(category.getId())) {
+                            return Mono.error(new ApiException(
+                                    "Category cannot be its own parent",
+                                    ErrorCode.INVALID_HIERARCHY));
+                        }
+
+                        return forumCategoryRepository.findById(category.getParentCategoryId())
+                                .flatMap(parent -> {
+                                    if (!parent.getIsActive()) {
+                                        return Mono.error(new ApiException(
+                                                "Cannot reactivate: Parent category is inactive",
+                                                ErrorCode.INVALID_HIERARCHY));
+                                    }
+
+                                    // TODO: When threads are implemented, consider if inactive threads
+                                    // should also be reactivated or remain inactive.
+
+                                    category.setIsActive(true);
+                                    return forumCategoryRepository.save(category);
+                                });
+                    }
+                    category.setIsActive(true);
+                    return forumCategoryRepository.save(category);
+                })
+                .as(transactionalOperator::transactional);
+    }
+
+    @Override
+    public Mono<Void> purgeCategory(UUID id) {
+        return forumCategoryRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Category not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)))
+                .flatMap(category -> {
+                    // Check if category has active children (can't purge if it has active children)
+                    return forumCategoryRepository.findChildCategories(id)
+                            .filter(ForumCategoryEntity::getIsActive)
+                            .hasElements()
+                            .flatMap(hasActiveElements -> {
+                                if (hasActiveElements) {
+                                    return Mono.error(new ApiException(
+                                            "Cannot purge category with active child categories",
+                                            ErrorCode.INVALID_HIERARCHY));
+                                }
+                                // TODO: When threads are implemented, add check here:
+                                // if (threadRepository.existsByCategoryId(id)) {
+                                //     return Mono.error(new ApiException(
+                                //         "Cannot purge category with existing threads. Delete or move threads first.",
+                                //         ErrorCode.VALIDATION_FAILED));
+                                // }
+
+                                // TODO: When other dependencies are added (subscriptions, analytics, etc.),
+                                // add similar checks here to prevent orphaned records.
+
+                                // Delete associated tags first, then delete category
+                                return forumCategoryTagRepository.deleteByCategoryId(id)
+                                        .then(forumCategoryRepository.delete(category));
+                            });
+                })
+                .as(transactionalOperator::transactional);
+    }
+
+    @Override
+    public Mono<Void> purgeOldInactiveCategories(int daysOld) {
+        Instant cutoffDate = Instant.now().minus(Duration.ofDays(daysOld));
+
+        return forumCategoryRepository.findInactiveCategoriesOlderThan(cutoffDate)
+                .flatMap(category -> {
+                    // Delete tags first, then category
+                    return forumCategoryTagRepository.deleteByCategoryId(category.getId())
+                            .then(forumCategoryRepository.delete(category));
+                })
+                .then()
+                .doOnSuccess(v -> log.info("Purged inactive categories older than {} days", daysOld))
+                .doOnError(e -> log.error("Error purging old categories: {}", e.getMessage()));
+    }
+
+    @Override
     public Mono<ForumCategoryEntity> getCategoryById(UUID id) {
         return forumCategoryRepository.findById(id)
-                .switchIfEmpty(Mono.error((new ApiException(
-                        "Category with id '"+ id +"' not found",
-                        ErrorCode.RESOURCE_NOT_FOUND))));
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Category with id '" + id + "' not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)));
     }
 
     @Override
     public Mono<ForumCategoryEntity> getCategoryBySlug(String slug) {
         return forumCategoryRepository.findBySlug(slug)
-                .switchIfEmpty(Mono.error((new ApiException(
-                        "Category with slug '"+ slug +"' not found",
-                        ErrorCode.RESOURCE_NOT_FOUND))));
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Category with slug '" + slug + "' not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)));
     }
 
     @Override
     public Flux<ForumCategoryEntity> getAllActiveCategories() {
         return forumCategoryRepository.findByIsActiveTrueOrderBySortOrderAsc();
+    }
+
+    @Override
+    public Flux<ForumCategoryEntity> getAllCategories() {
+        return forumCategoryRepository.findAll()
+                .sort(Comparator.comparing(ForumCategoryEntity::getSortOrder)
+                        .thenComparing(ForumCategoryEntity::getName));
+    }
+
+    @Override
+    public Flux<ForumCategoryEntity> getInactiveCategories() {
+        return forumCategoryRepository.findByIsActiveFalse()
+                .sort(Comparator.comparing(ForumCategoryEntity::getCreatedAt).reversed());
+    }
+
+    @Override
+    public Mono<Long> getInactiveCount() {
+        return forumCategoryRepository.countByIsActiveFalse();
     }
 
     // ==================== HIERARCHY ====================
@@ -171,17 +292,16 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     @Override
     public Mono<ForumCategoryTagEntity> addTag(UUID categoryId, ForumCategoryTagRequest request) {
         return forumCategoryRepository.findById(categoryId)
-                .switchIfEmpty(Mono.error((new ApiException(
-                                "Category with id '"+ categoryId +"' not found",
-                                ErrorCode.RESOURCE_NOT_FOUND))))
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Category with id '" + categoryId + "' not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)))
                 .flatMap(category ->
                         forumCategoryTagRepository.existsByCategoryIdAndTagName(categoryId, request.name())
                                 .flatMap(exists -> {
                                     if (exists) {
                                         return Mono.error(new ApiException(
                                                 "Tag '" + request.name() + "' already exists",
-                                                ErrorCode.TAG_ALREADY_EXISTS
-                                        ));
+                                                ErrorCode.TAG_ALREADY_EXISTS));
                                     }
                                     return saveTag(categoryId, request);
                                 })
@@ -193,7 +313,7 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     public Mono<ForumCategoryTagEntity> updateTagDescription(UUID categoryId, String tagName, String description) {
         return forumCategoryTagRepository.findByCategoryIdAndTagName(categoryId, tagName)
                 .switchIfEmpty(Mono.error(new ApiException(
-                        "Tag '"+ tagName + "' not found in category '" + categoryId + "'",
+                        "Tag '" + tagName + "' not found in category '" + categoryId + "'",
                         ErrorCode.TAG_NOT_FOUND)))
                 .flatMap(tag -> {
                     tag.setTagDescription(description);
@@ -206,7 +326,7 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     public Mono<Void> removeTag(UUID categoryId, String tagName) {
         return forumCategoryTagRepository.findByCategoryIdAndTagName(categoryId, tagName)
                 .switchIfEmpty(Mono.error(new ApiException(
-                        "Tag '"+ tagName + "' not found in category '" + categoryId + "'",
+                        "Tag '" + tagName + "' not found in category '" + categoryId + "'",
                         ErrorCode.TAG_NOT_FOUND)))
                 .flatMap(tag -> forumCategoryTagRepository.deleteByCategoryIdAndTagName(categoryId, tagName))
                 .as(transactionalOperator::transactional);
@@ -215,9 +335,9 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     @Override
     public Mono<Void> replaceTags(UUID categoryId, List<ForumCategoryTagRequest> tags) {
         return forumCategoryRepository.findById(categoryId)
-                .switchIfEmpty(Mono.error((new ApiException(
-                "Category with id '"+ categoryId +"' not found",
-                ErrorCode.RESOURCE_NOT_FOUND))))
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Category with id '" + categoryId + "' not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)))
                 .flatMap(category ->
                         forumCategoryTagRepository.deleteByCategoryId(categoryId)
                                 .thenMany(Flux.fromIterable(tags))
@@ -235,15 +355,14 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
         }
 
         return forumCategoryRepository.findById(parentCategoryId)
-                .switchIfEmpty(Mono.error((new ApiException(
-                        "Parent category with id '"+ parentCategoryId +"' not found",
-                        ErrorCode.RESOURCE_NOT_FOUND))))
+                .switchIfEmpty(Mono.error(new ApiException(
+                        "Parent category with id '" + parentCategoryId + "' not found",
+                        ErrorCode.RESOURCE_NOT_FOUND)))
                 .flatMap(parent -> {
                     if (parent.getParentCategoryId() != null) {
                         return Mono.error(new ApiException(
                                 "Cannot create subcategory under a child category (only one level allowed)",
-                                ErrorCode.INVALID_HIERARCHY
-                        ));
+                                ErrorCode.INVALID_HIERARCHY));
                     }
                     return Mono.empty();
                 });
@@ -334,6 +453,3 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
         return forumCategoryRepository.save(existing);
     }
 }
-
-
-
