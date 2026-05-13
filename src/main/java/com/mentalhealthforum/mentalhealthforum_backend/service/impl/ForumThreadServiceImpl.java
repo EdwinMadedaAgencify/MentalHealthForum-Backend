@@ -113,7 +113,9 @@ public class ForumThreadServiceImpl implements ForumThreadService {
 
     @Override
     public Mono<PaginatedResponse<ThreadResponse>> getAllThreads(
-            int page, int size, UUID categoryId,
+            int page,
+            int size,
+            UUID categoryId,
             UUID creatorId,
             ThreadType threadType,
             ThreadStatus threadStatus,

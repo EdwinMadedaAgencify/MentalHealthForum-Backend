@@ -117,7 +117,7 @@ public class PublicThreadController {
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
-        // forumThreadService.getAllThreads returns Mono<PaginatedResponse<UserRepresentation>>
+        // forumThreadService.getAllPosts returns Mono<PaginatedResponse<UserRepresentation>>
         return forumThreadService.getAllThreads(page, size, categoryId, creatorId, threadType, threadStatus, isDeleted, isFeatured, hasContentWarning, search, sortBy, sortDirection, viewerContext)
                 .map(paginatedThreads -> {
                     String message = "Paginated thread records retrieved successfully.";
