@@ -1,7 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.enums;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import lombok.Getter;
+import reactor.core.publisher.Mono;
 
 @Getter
 public enum ModerationAction {
@@ -44,6 +46,7 @@ public enum ModerationAction {
     REPORT_ESCALATED("Escalate report", GroupPath.MODERATORS),
     REPORT_ACTIONED("Action report", GroupPath.MODERATORS),
     REPORT_DISMISSED("Dismiss report", GroupPath.MODERATORS),
+    REPORT_DETAILS_UPDATED("Update report details", GroupPath.MODERATORS),
 
     // System/bulk actions
     BULK_ACTION("Bulk action", GroupPath.ADMINISTRATORS),
@@ -61,4 +64,17 @@ public enum ModerationAction {
     public boolean isAllowedFor(ViewerContext viewerContext){
         return viewerContext.isInGroup(requiredGroup);
     }
+
+    public Mono<Void> checkPermission(ViewerContext viewerContext){
+        if (!isAllowedFor(viewerContext)) {  // ✅ If NOT allowed → error
+            return Mono.error(new ApiException(
+                    String.format("You do not have permission to %s. This action requires %s group.",
+                            getDisplayName().toLowerCase(),
+                            requiredGroup.getDisplayName()),
+                    ErrorCode.FORBIDDEN
+            ));
+        }
+        return Mono.empty();
+    }
+
 }

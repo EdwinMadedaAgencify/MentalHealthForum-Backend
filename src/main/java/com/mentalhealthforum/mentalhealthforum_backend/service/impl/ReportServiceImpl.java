@@ -177,7 +177,8 @@ public class ReportServiceImpl implements ReportService {
                             List.of(
                                     new ValidationRule(
                                             report -> !report.isPending() && report.isAssigned(),
-                                            "Only pending and unassigned reports can be assigned"
+                                            "Only pending and unassigned reports can be assigned",
+                                            ErrorCode.VALIDATION_FAILED // State issue
                                     )
                             )
                     );
@@ -189,47 +190,42 @@ public class ReportServiceImpl implements ReportService {
         UUID reviewerId = UUID.fromString(viewerContext.getUserId());
         boolean isAdmin = viewerContext.isAdmin();
 
-        if(!request.getActionTaken().isAllowedFor(viewerContext)){
-            return Mono.error(new ApiException(
-                    String.format("You don't have permission to perform action: %s. This action requires %s.",
-                            request.getActionTaken().getDisplayName(),
-                            request.getActionTaken().getRequiredGroup().getDisplayName()),
-                            ErrorCode.FORBIDDEN)
-            );
-        }
+        return  request.getActionTaken().checkPermission(viewerContext)
+                        .then(performModeratorAction(reportId, viewerContext, "resolve report",
+                            report -> {
 
-        return performModeratorAction(reportId, viewerContext, "resolve report",
-                report -> {
+                                // Perform escalation
+                                report.setStatus(ReportStatus.ACTION_TAKEN);
+                                report.setActionTaken(request.getActionTaken());
+                                report.setActionTakenDetails(request.getActionTakenDetails());
+                                report.setDismissalReason(null);
+                                report.setResolutionNotes(request.getResolutionNotes());
+                                report.setReviewedAt(Instant.now());
+                                report.setReviewedBy(reviewerId);
+                                report.setLastModifiedAt(Instant.now());
+                                // dismissalReason remains null for resolve actions
+                                return contentReportRepository.save(report)
+                                        .flatMap(this::mapToResponse);
 
-                    // Perform escalation
-                    report.setStatus(ReportStatus.ACTION_TAKEN);
-                    report.setActionTaken(request.getActionTaken());
-                    report.setActionTakenDetails(request.getActionTakenDetails());
-                    report.setDismissalReason(null);
-                    report.setResolutionNotes(request.getResolutionNotes());
-                    report.setReviewedAt(Instant.now());
-                    report.setReviewedBy(reviewerId);
-                    report.setLastModifiedAt(Instant.now());
-                    // dismissalReason remains null for resolve actions
-                    return contentReportRepository.save(report)
-                            .flatMap(this::mapToResponse);
-
-                },
-                List.of(
-                        new ValidationRule(
-                                report -> !report.isUnderReview() && !report.isEscalated(),
-                                "Report must be in UNDER_REVIEW or ESCALATED status to resolve"
-                        ),
-                        new ValidationRule(
-                                report -> report.isUnderReview() && !isAdmin && !report.isAssignedTo(reviewerId),
-                                "You can only resolve reports assigned to you"
-                        ),
-                        new ValidationRule(
-                                report -> report.isEscalated() && !isAdmin,
-                                "Only admins can resolve escalated reports"
-                        )
-                )
-                );
+                            },
+                            List.of(
+                                    new ValidationRule(
+                                            report -> !report.isUnderReview() && !report.isEscalated(),
+                                            "Report must be in UNDER_REVIEW or ESCALATED status to resolve",
+                                            ErrorCode.VALIDATION_FAILED // State issue
+                                    ),
+                                    new ValidationRule(
+                                            report -> report.isUnderReview() && !isAdmin && !report.isAssignedTo(reviewerId),
+                                            "You can only resolve reports assigned to you",
+                                            ErrorCode.FORBIDDEN // Permission issue
+                                    ),
+                                    new ValidationRule(
+                                            report -> report.isEscalated() && !isAdmin,
+                                            "Only admins can resolve escalated reports",
+                                            ErrorCode.VALIDATION_FAILED // Permission issue
+                                    )
+                            ))
+                        );
     }
 
     @Override
@@ -238,7 +234,8 @@ public class ReportServiceImpl implements ReportService {
         UUID reviewerId = UUID.fromString(viewerContext.getUserId());
         boolean isAdmin = viewerContext.isAdmin();
 
-        return performModeratorAction(reportId, viewerContext, "dismiss report",
+        return ModerationAction.REPORT_DISMISSED.checkPermission(viewerContext)
+                .then(performModeratorAction(reportId, viewerContext, "dismiss report",
                 report -> {
 
                     report.setStatus(ReportStatus.DISMISSED);
@@ -256,17 +253,20 @@ public class ReportServiceImpl implements ReportService {
                 List.of(
                         new ValidationRule(
                                 report -> !report.isUnderReview() && !report.isEscalated(),
-                                "Report must be in UNDER_REVIEW or ESCALATED status to dismiss"
+                                "Report must be in UNDER_REVIEW or ESCALATED status to dismiss",
+                                ErrorCode.VALIDATION_FAILED
                         ),
                         new ValidationRule(
                                 report -> report.isUnderReview() && !isAdmin && !report.isAssignedTo(reviewerId),
-                                "You can only dismiss reports assigned to you"
+                                "You can only dismiss reports assigned to you",
+                                ErrorCode.FORBIDDEN
                         ),
                         new ValidationRule(
                                 report -> report.isEscalated() && !isAdmin,
-                                "Only admins can dismiss escalated reports"
+                                "Only admins can dismiss escalated reports",
+                                ErrorCode.FORBIDDEN
                         )
-                )
+                ))
         );
     }
 
@@ -276,7 +276,8 @@ public class ReportServiceImpl implements ReportService {
         UUID moderatorId = UUID.fromString(viewerContext.getUserId());
         boolean isAdmin = viewerContext.isAdmin();
 
-        return performModeratorAction(reportId, viewerContext, "escalate reports",
+        return ModerationAction.REPORT_ESCALATED.checkPermission(viewerContext)
+                .then(performModeratorAction(reportId, viewerContext, "escalate reports",
                     report -> {
 
                     report.setStatus(ReportStatus.ESCALATED);
@@ -292,17 +293,20 @@ public class ReportServiceImpl implements ReportService {
                 List.of(
                         new ValidationRule(
                                 report -> !report.isUnderReview(),
-                                "Only reports under review can be escalated"
+                                "Only reports under review can be escalated",
+                                ErrorCode.VALIDATION_FAILED
                         ),
                         new ValidationRule(
                                 report -> !isAdmin && !report.isAssignedTo(moderatorId),
-                                "You can only escalate reports assigned to you"
+                                "You can only escalate reports assigned to you",
+                                ErrorCode.FORBIDDEN
                         ),
                         new ValidationRule(
                                 ContentReportEntity::isEscalated,
-                                "Report is already escalated"
+                                "Report is already escalated",
+                                ErrorCode.VALIDATION_FAILED
                         )
-                )
+                ))
         );
     }
 
@@ -313,7 +317,8 @@ public class ReportServiceImpl implements ReportService {
         UUID moderatorId = UUID.fromString(viewerContext.getUserId());
         boolean isAdmin = viewerContext.isAdmin();
 
-        return performModeratorAction(reportId, viewerContext, "update report details",
+        return ModerationAction.REPORT_DETAILS_UPDATED.checkPermission(viewerContext)
+                .then(performModeratorAction(reportId, viewerContext, "update report details",
                 report -> {
 
                     boolean updated = false;
@@ -348,21 +353,25 @@ public class ReportServiceImpl implements ReportService {
                 List.of(
                         new ValidationRule(
                                 ContentReportEntity::isResolvedOrDismissed,
-                                "Cannot update reports that are resolved or dismissed"
+                                "Cannot update reports that are resolved or dismissed",
+                                ErrorCode.VALIDATION_FAILED
                         ),
                         new ValidationRule(
                                 report -> !report.isUnderReview() && !report.isEscalated(),
-                                "Only reports under review or escalated can be updated"
+                                "Only reports under review or escalated can be updated",
+                                ErrorCode.VALIDATION_FAILED
                         ),
                         new ValidationRule(
                                 report -> report.isUnderReview() && !isAdmin && report.isAssignedToSomeoneElse(moderatorId),
-                                "Cannot update reports assigned to another moderator"
+                                "Cannot update reports assigned to another moderator",
+                                ErrorCode.FORBIDDEN
                         ),
                         new ValidationRule(
                                 report -> report.isEscalated() && !isAdmin,
-                                "Only admins can update escalated reports"
+                                "Only admins can update escalated reports",
+                                ErrorCode.FORBIDDEN
                         )
-                )
+                ))
 
         );
     }
@@ -430,7 +439,12 @@ public class ReportServiceImpl implements ReportService {
                 .switchIfEmpty(Mono.error(new ApiException("Report not found", ErrorCode.RESOURCE_NOT_FOUND)));
     }
 
-    private record ValidationRule(Predicate<ContentReportEntity> condition, String errorMessage){};
+    private record ValidationRule(Predicate<ContentReportEntity> condition, String errorMessage, ErrorCode errorCode){
+        // Convenience constructor for VALIDATION_FAILED
+        public ValidationRule(Predicate<ContentReportEntity> condition, String errorMessage){
+            this(condition, errorMessage, ErrorCode.VALIDATION_FAILED);
+        }
+    };
 
     private <T> Mono<T> performModeratorAction(
             UUID reportId,
@@ -448,7 +462,7 @@ public class ReportServiceImpl implements ReportService {
                     for(ValidationRule rule: validators){
                         // Condition is FAILURE condition - if true, we error
                         if(rule.condition().test(report)){
-                            return Mono.error(new ApiException(rule.errorMessage, ErrorCode.VALIDATION_FAILED));
+                            return Mono.error(new ApiException(rule.errorMessage, rule.errorCode));
                         }
                     }
                     return action.apply(report);
