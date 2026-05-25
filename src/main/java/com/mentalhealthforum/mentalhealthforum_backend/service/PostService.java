@@ -24,6 +24,7 @@ public interface PostService {
             UUID parentPostId,
             PostType postType,
             Boolean hasContentWarning,
+            Boolean isDeleted,
             String search,
             String sortBy,
             String sortDirection,

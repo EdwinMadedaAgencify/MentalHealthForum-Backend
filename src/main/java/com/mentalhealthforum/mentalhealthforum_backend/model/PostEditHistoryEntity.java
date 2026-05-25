@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.model;
 
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ContentWarningType;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.EditReason;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -32,6 +33,12 @@ public class PostEditHistoryEntity {
 
     @Column("previous_word_count")
     private Integer previousWordCount;
+
+    @Column("previous_content_warning_type")
+    private ContentWarningType previousContentWarningType;
+
+    @Column("previous_content_warning_custom_text")
+    private String previousContentWarningCustomText;
 
     @CreatedDate
     @Column("edited_at")

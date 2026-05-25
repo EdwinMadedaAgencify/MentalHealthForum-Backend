@@ -12,6 +12,7 @@ public enum ModerationAction {
     POST_CONTENT_WARNING_ADDED("Add content warning", GroupPath.MODERATORS),
     POST_RESTORED("Restore post", GroupPath.MODERATORS),
     POST_PERMANENTLY_DELETED("Permanently delete post", GroupPath.ADMINISTRATORS),
+    VIEW_DELETED_POSTS("View deleted posts", GroupPath.MODERATORS),
 
     // Thread actions
     THREAD_LOCKED("Lock thread", GroupPath.MODERATORS),

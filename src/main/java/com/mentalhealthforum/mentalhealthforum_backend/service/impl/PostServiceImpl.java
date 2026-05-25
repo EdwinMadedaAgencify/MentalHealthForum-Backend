@@ -86,12 +86,26 @@ public class PostServiceImpl implements PostService {
             UUID parentPostId,
             PostType postType,
             Boolean hasContentWarning,
+            Boolean isDeleted,
             String search,
             String sortBy,
             String sortDirection,
             ViewerContext viewerContext
     ) {
-        return executeGetPostsQuery(page, size, threadId, authorId, parentPostId, postType, hasContentWarning,
+
+        UUID currentUserId = UUID.fromString(viewerContext.getUserId());
+
+        // Handle deleted posts visibility
+        if (isDeleted != null && isDeleted) {
+            boolean canViewAllDeleted = ModerationAction.VIEW_DELETED_POSTS.isAllowedFor(viewerContext);
+
+            if(!canViewAllDeleted){
+                // Regular users can only see their own deleted posts
+                authorId = currentUserId;
+            }
+        }
+
+        return executeGetPostsQuery(page, size, threadId, authorId, parentPostId, postType, hasContentWarning, isDeleted,
                 search, sortBy, sortDirection);
     }
 
@@ -102,9 +116,13 @@ public class PostServiceImpl implements PostService {
                 viewerContext,
                 "update post",
                 post -> {
+                    // Capture previous state including content warnings
                     String previousContent = post.getContent();
                     Integer previousWordCount = post.getWordCount();
+                    ContentWarningType previousContentWarningType = post.getContentWarningType();
+                    String previousContentWarningCustomText = post.getContentWarningCustomText();
 
+                    // Apply updates
                     post.setContent(request.getContent());
                     post.setContentWarningType(request.getContentWarningType());
                     post.setContentWarningCustomText(request.getContentWarningCustomText());
@@ -116,13 +134,17 @@ public class PostServiceImpl implements PostService {
                     String customEditReason = request.getEditReason() == EditReason.OTHER ? request.getEditReasonCustomText() : null;
                     post.setEditReasonCustomText(customEditReason);
 
+                    // Save history with previous warning state
                     PostEditHistoryEntity history = PostEditHistoryEntity.builder()
                             .postId(post.getId())
                             .previousContent(previousContent)
                             .previousWordCount(previousWordCount)
+                            .previousContentWarningType(previousContentWarningType)
+                            .previousContentWarningCustomText(previousContentWarningCustomText)
                             .editedBy(UUID.fromString(viewerContext.getUserId()))
                             .editReasonType(request.getEditReason())
                             .editReasonCustomText(customEditReason)
+                            .isModeratorEdit(false)
                             .build();
 
                     return postEditHistoryRepository.save(history)
@@ -151,7 +173,7 @@ public class PostServiceImpl implements PostService {
     @Override
     public Mono<Void> softDeleteAnyPost(UUID postId, ViewerContext viewerContext) {
         return ModerationAction.POST_DELETED.checkPermission(viewerContext)
-                .then(performModeratorAction(postId, viewerContext, "soft delete post",
+                .then(performModeratorAction(postId,
                         post -> postRepository.softDeletePost(postId),
                         List.of(new ValidationRule(PostEntity::getIsDeleted, "Cannot delete an already deleted post")),
                         true));
@@ -160,7 +182,7 @@ public class PostServiceImpl implements PostService {
     @Override
     public Mono<Void> restorePost(UUID postId, ViewerContext viewerContext) {
         return ModerationAction.POST_RESTORED.checkPermission(viewerContext)
-                .then(performModeratorAction(postId, viewerContext, "restore post",
+                .then(performModeratorAction(postId,
                         post -> postRepository.restorePost(postId),
                         List.of(new ValidationRule(post -> !post.getIsDeleted(), "Cannot restore a post that is not deleted")),
                         false));
@@ -173,22 +195,28 @@ public class PostServiceImpl implements PostService {
         UUID moderatorId = UUID.fromString(viewerContext.getUserId());
 
         return ModerationAction.POST_CONTENT_WARNING_ADDED.checkPermission(viewerContext)
-                .then(performModeratorAction(postId, viewerContext, "add content warning",
+                .then(performModeratorAction(postId,
                         post -> {
+                            // Capture previous warning state
                             String previousContent = post.getContent();
                             Integer previousWordCount = post.getWordCount();
+                            ContentWarningType previousContentWarningType = post.getContentWarningType();
+                            String previousContentWarningCustomText = post.getContentWarningCustomText();
 
-
+                            // Apply new warning
                             post.setContentWarningType(request.contentWarningType());
                             post.setContentWarningCustomText(request.contentWarningCustomText());
                             post.setIsEdited(true);
                             post.setEditedByUserId(moderatorId);
                             post.setUpdatedAt(Instant.now());
 
+                            // Save history with previous warning state
                             PostEditHistoryEntity history = PostEditHistoryEntity.builder()
                                     .postId(post.getId())
                                     .previousContent(previousContent)
                                     .previousWordCount(previousWordCount)
+                                    .previousContentWarningType(previousContentWarningType)
+                                    .previousContentWarningCustomText(previousContentWarningCustomText)
                                     .editedBy(moderatorId)
                                     .editReasonType(EditReason.CONTENT_WARNING_ADDED)
                                     .isModeratorEdit(true)
@@ -302,6 +330,7 @@ public class PostServiceImpl implements PostService {
             UUID parentPostId,
             PostType postType,
             Boolean hasContentWarning,
+            Boolean isDeleted,
             String search,
             String sortBy,
             String sortDirection
@@ -320,11 +349,11 @@ public class PostServiceImpl implements PostService {
 
         return postRepository.findPostsPaginated(
                         threadId, authorId, false, parentPostId, effectivePostType, hasContentWarning,
-                        effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset)
+                        effectiveSearch, isDeleted, effectiveSortBy, effectiveSortDirection, size, offset)
                 .flatMap(this::mapToResponse)
                 .collectList()
                 .zipWith(postRepository.countPostsWithFilters(
-                        threadId, authorId, false, parentPostId, effectivePostType, hasContentWarning, effectiveSearch))
+                        threadId, authorId, false, parentPostId, effectivePostType, hasContentWarning, effectiveSearch, isDeleted))
                 .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
     }
 
@@ -375,8 +404,6 @@ public class PostServiceImpl implements PostService {
 
     private <T> Mono<T> performModeratorAction(
             UUID postId,
-            ViewerContext viewerContext,
-            String actionDescription,
             Function<PostEntity, Mono<T>> action,
             List<ValidationRule> validators,
             boolean requireActive

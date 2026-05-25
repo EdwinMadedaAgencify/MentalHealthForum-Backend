@@ -4,7 +4,6 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.CreatePostRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.FlagPostRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.PostResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.UpdatePostRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.PostType;
@@ -71,13 +70,14 @@ public class PublicPostController {
             @RequestParam(required = false, name = "parent_post_id") @Parameter(name = "parent_post_id", description = "Filter by parent post ID (for threaded replies)") UUID parentPostId,
             @RequestParam(required = false, name = "post_type") @Parameter(name = "post_type", description = "Filter by post type: REPLY, ANSWER, SYSTEM_MESSAGE, MODERATOR_NOTE") PostType postType,
             @RequestParam(required = false, name = "has_content_warning") @Parameter(name = "has_content_warning", description = "Filter posts with content warnings") Boolean hasContentWarning,
+            @RequestParam(defaultValue = "false", name = "is_deleted") @Parameter(name = "is_deleted", description = "Include soft-deleted posts") boolean isDeleted,
             @RequestParam(defaultValue = "", name = "search") @Parameter(name = "search", description = "Search by content (case-insensitive contains)") String search,
             @RequestParam(defaultValue = "created_at", name = "sort_by") @Parameter(name = "sort_by", description = "Field to sort by: created_at, updated_at") String sortBy,
             @RequestParam(required = false, name = "sort_direction") @Parameter(name = "sort_direction", description = "Sort direction: asc or desc") String sortDirection
     ){
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return postService. getAllPosts( page, size, threadId, authorId, parentPostId, postType, hasContentWarning, search,sortBy, sortDirection, viewerContext)
+        return postService. getAllPosts( page, size, threadId, authorId, parentPostId, postType, hasContentWarning, isDeleted, search,sortBy, sortDirection, viewerContext)
                 .map(paginatedPosts ->
                         ResponseEntity.ok(new StandardSuccessResponse<>("Posts retrieved successfully", paginatedPosts)));
     }

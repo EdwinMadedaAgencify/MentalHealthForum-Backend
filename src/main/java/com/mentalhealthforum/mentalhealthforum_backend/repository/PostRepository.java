@@ -37,7 +37,7 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
                           ELSE content_warning_type = 'NONE' END))
                 AND (:search IS NULL OR
                     LOWER(content) LIKE '%' || LOWER(:search) || '%')
-                AND is_deleted = false
+                AND is_deleted = :isDeleted
                 ORDER BY
                     -- 1. Sort by selected field and direction: DESC
                     CASE :sortDirection
@@ -73,6 +73,7 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
             @Param("postType") String postType,
             @Param("hasContentWarning") Boolean hasContentWarning,
             @Param("search") String search,
+            @Param("isDeleted") Boolean isDeleted,
             @Param("sortBy") String sortBy,
             @Param("sortDirection") String sortDirection,
             @Param("limit") int limit,
@@ -92,7 +93,7 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
                           ELSE content_warning_type = 'NONE' END))
                 AND (:search IS NULL OR
                     LOWER(content) LIKE '%' || LOWER(:search) || '%')
-                AND is_deleted = false
+                AND is_deleted = :isDeleted
     """)
     Mono<Long> countPostsWithFilters(
             @Param("threadId") UUID threadId,
@@ -101,7 +102,8 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
             @Param("parentPostId") UUID parentPostId,
             @Param("postType") String postType,
             @Param("hasContentWarning") Boolean hasContentWarning,
-            @Param("search") String search
+            @Param("search") String search,
+            @Param("isDeleted") Boolean isDeleted
     );
 
 
