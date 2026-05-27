@@ -39,16 +39,9 @@ public class CreateForumCategoryRequest{
     private UUID parentCategoryId;
 
     @Builder.Default
-    private ParticipationRequirements participationRequirements = new ParticipationRequirements();
-
-    @Builder.Default
     private ContentWarningType contentWarningType = ContentWarningType.NONE;
 
-
     private String contentWarningCustomText;
-
-    @Builder.Default
-    private DefaultThreadSettings defaultThreadSettings = new DefaultThreadSettings();
 
     @Builder.Default
     @PositiveOrZero(message = "Sort order must be zero or positive")

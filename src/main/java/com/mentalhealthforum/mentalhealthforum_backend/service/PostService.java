@@ -12,6 +12,19 @@ import reactor.core.publisher.Mono;
 import java.util.UUID;
 
 public interface PostService {
+
+    // ==================== FUTURE ENHANCEMENTS ====================
+// TODO: Add default descriptions to ContentWarningType enum for better UX
+// Example: ABUSE("Abuse", "Discusses abusive behavior or harassment")
+// Frontend can display description on hover
+
+// TODO: Consider renaming permanentlyDeletePost to purgePost for consistency with ForumCategoryService
+// Also consider adding pre-deletion validation (check for dependencies like replies)
+
+    // TODO: Add support for custom text definitions - if user doesn't provide custom text,
+// use the enum default description and show tooltip on hover
+
+
     Mono<PostResponse> createPost(CreatePostRequest request, ViewerContext viewerContext);
 
     Mono<PostResponse> getPost(UUID postId, ViewerContext viewerContext);

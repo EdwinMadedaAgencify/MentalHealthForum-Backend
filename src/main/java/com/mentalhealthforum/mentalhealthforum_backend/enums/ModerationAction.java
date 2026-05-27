@@ -35,6 +35,22 @@ public enum ModerationAction {
     THREAD_CONTENT_WARNING_ADDED("Add content warning to thread", GroupPath.MODERATORS),
     VIEW_DELETED_THREADS("View deleted threads", GroupPath.MODERATORS),
 
+    // Category actions
+    CATEGORY_CREATED("Create category", GroupPath.ADMINISTRATORS),
+    CATEGORY_UPDATED("Update category", GroupPath.ADMINISTRATORS),
+    CATEGORY_SOFT_DELETED("Soft Delete category", GroupPath.ADMINISTRATORS),
+    CATEGORY_REACTIVATED("Reactivate category", GroupPath.ADMINISTRATORS),
+    CATEGORY_PURGED("Purge category", GroupPath.ADMINISTRATORS),
+    CATEGORY_VIEW_INACTIVE("View inactive categories", GroupPath.ADMINISTRATORS),
+    CATEGORY_ACCESS_CHANGED("Change category access", GroupPath.ADMINISTRATORS),
+    CATEGORY_PURGE_OLD("Purge old inactive categories", GroupPath.ADMINISTRATORS),
+
+    // Tag actions
+    CATEGORY_TAG_ADDED("Add tag to category", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_REMOVED("Remove tag from category", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_UPDATED("Update tag description", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_REPLACED("Replace all tags", GroupPath.ADMINISTRATORS),
+
 
     // User actions
     USER_WARNED("Warn user", GroupPath.MODERATORS),
@@ -60,8 +76,8 @@ public enum ModerationAction {
     REPORT_DETAILS_UPDATED("Update report details", GroupPath.MODERATORS),
 
     // System/bulk actions
-    BULK_ACTION("Bulk action", GroupPath.ADMINISTRATORS),
-    CATEGORY_ACCESS_CHANGED("Change category access", GroupPath.ADMINISTRATORS);
+    BULK_ACTION("Bulk action", GroupPath.ADMINISTRATORS);
+
 
     private final String displayName;
     private final GroupPath requiredGroup;

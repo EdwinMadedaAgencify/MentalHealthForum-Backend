@@ -44,7 +44,7 @@ public class NormalizeUtils {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private static String normalizeTag(String tag){
+    public static String normalizeTag(String tag){
         if(tag == null) return "";
         return normalizeUnicode(tag)
                 .toLowerCase()

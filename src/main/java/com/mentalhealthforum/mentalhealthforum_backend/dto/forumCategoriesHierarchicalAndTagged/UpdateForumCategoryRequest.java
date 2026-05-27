@@ -35,13 +35,9 @@ public class UpdateForumCategoryRequest {
 
     private UUID parentCategoryId;
 
-    private ParticipationRequirements participationRequirements;
-
     private ContentWarningType contentWarningType;
 
     private String contentWarningCustomText;
-
-    private DefaultThreadSettings defaultThreadSettings;
 
     @PositiveOrZero(message = "Sort order must be zero or positive")
     private Integer sortOrder;

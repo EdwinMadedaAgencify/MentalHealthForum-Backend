@@ -1,12 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.SlugGenerationResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.CreateForumCategoryRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryHierarchyDto;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryTagRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.UpdateForumCategoryRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryTagEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -14,46 +11,77 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ForumCategoryService {
-
-    // ==================== FUTURE ENHANCEMENTS ====================
-// TODO: Add default descriptions to ContentWarningType enum for better UX
-// Example: ABUSE("Abuse", "Discusses abusive behavior or harassment")
-// Frontend can display description on hover
-
-// TODO: Consider renaming permanentlyDeletePost to purgePost for consistency with ForumCategoryService
-// Also consider adding pre-deletion validation (check for dependencies like replies)
-
-// TODO: Add support for custom text definitions - if user doesn't provide custom text,
-// use the enum default description and show tooltip on hover
-
     // Slug generation
     Mono<SlugGenerationResponse> generateSlug(String name, UUID excludeCategoryId);
 
     // Category CRUD
-    Mono<ForumCategoryEntity> createCategory(CreateForumCategoryRequest request);
-    Mono<ForumCategoryEntity> updateCategory(UUID id, UpdateForumCategoryRequest request);
-    Mono<Void> softDeleteCategory(UUID id);  // Changed from deleteCategory
-    Mono<ForumCategoryEntity> reactivateCategory(UUID id);
+    Mono<ForumCategoryResponse> createCategory(CreateForumCategoryRequest request, ViewerContext viewerContext);
 
-    Mono<Void> purgeCategory(UUID id);
-    Mono<Void> purgeOldInactiveCategories(int daysOld);
+    Mono<ForumCategoryResponse> updateCategory(UUID id, UpdateForumCategoryRequest request, ViewerContext viewerContext);
 
-    Mono<ForumCategoryEntity> getCategoryById(UUID id);
-    Mono<ForumCategoryEntity> getCategoryBySlug(String slug);
-    Flux<ForumCategoryEntity> getAllActiveCategories();
-    Flux<ForumCategoryEntity> getAllCategories();
-    Flux<ForumCategoryEntity> getInactiveCategories();
-    Mono<Long> getInactiveCount();
+    Mono<Void> softDeleteCategory(UUID id, ViewerContext viewerContext);
+
+    Mono<ForumCategoryResponse> reactivateCategory(UUID id, ViewerContext viewerContext);
+
+    Mono<Void> purgeCategory(UUID id, ViewerContext viewerContext);
+
+    Mono<Void> purgeOldInactiveCategories(int daysOld, ViewerContext viewerContext);
+
+    Mono<Void> purgeOldInactiveCategoriesInternal(int daysOld);
+
+    Mono<ForumCategoryResponse> getCategoryById(UUID id);
+
+    Mono<ForumCategoryResponse> getCategoryBySlug(String slug);
+
+
+    Mono<PaginatedResponse<ForumCategoryResponse>> getActiveCategories(
+            int page,
+            int size,
+            String tagName,
+            UUID parentCategoryId,
+            Boolean isParent,
+            String search,
+            String sortBy,
+            String sortDirection
+    );
+
+
+    Mono<PaginatedResponse<ForumCategoryResponse>> getAllCategories(
+            int page,
+            int size,
+            String tagName,
+            UUID parentCategoryId,
+            Boolean isParent,
+            String search,
+            Boolean isActive,
+            String sortBy,
+            String sortDirection,
+            ViewerContext viewerContext
+    );
+
+    Mono<Long> getInactiveCount(ViewerContext viewerContext);
 
     // Hierarchy
+
     Flux<ForumCategoryHierarchyDto> getCategoryHierarchy();
-    Flux<ForumCategoryEntity> getRootCategories();
-    Flux<ForumCategoryEntity> getChildCategories(UUID parentId);
+
+    Flux<ForumCategoryResponse> getRootCategories();
+
+    Flux<ForumCategoryResponse> getChildCategories(UUID parentId);
+
 
     // Tag operations
-    Flux<ForumCategoryTagEntity> getTags(UUID categoryId);
-    Mono<ForumCategoryTagEntity> addTag(UUID categoryId, ForumCategoryTagRequest request);
-    Mono<ForumCategoryTagEntity> updateTagDescription(UUID categoryId, String tagName, String description);
-    Mono<Void> removeTag(UUID categoryId, String tagName);
-    Mono<Void> replaceTags(UUID categoryId, List<ForumCategoryTagRequest> tags);
+
+
+    Flux<ForumCategoryTagResponse> getTags(UUID categoryId);
+
+    Mono<ForumCategoryTagResponse> addTag(UUID categoryId, ForumCategoryTagRequest request, ViewerContext viewerContext);
+
+    Mono<ForumCategoryTagResponse> updateTagDescription(UUID categoryId, String tagName, String description, ViewerContext viewerContext);
+
+    Mono<Void> removeTag(UUID categoryId, String tagName, ViewerContext viewerContext);
+
+    Mono<Void> replaceTags(UUID categoryId, List<ForumCategoryTagRequest> tags, ViewerContext viewerContext);
+
+
 }

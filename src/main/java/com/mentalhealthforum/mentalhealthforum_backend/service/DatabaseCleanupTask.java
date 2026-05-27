@@ -75,7 +75,7 @@ public class DatabaseCleanupTask {
     @Scheduled(cron = "0 0 2 * * ?")
     public void purgeOldInactiveCategories(){
         log.info("Starting scheduled purge of old inactive categories");
-        forumCategoryService.purgeOldInactiveCategories(90)
+        forumCategoryService.purgeOldInactiveCategoriesInternal(90)
                 .subscribe(
                         v -> log.info("Scheduled purge completed"),
                         e -> log.error("Scheduled purge failed: {}", e.getMessage())

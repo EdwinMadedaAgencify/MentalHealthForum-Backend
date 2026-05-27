@@ -1,17 +1,20 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.SlugGenerationResponse;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.CreateForumCategoryRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryHierarchyDto;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.ForumCategoryTagRequest;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.UpdateForumCategoryRequest;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ModerationAction;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
+import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryTagEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumCategoryRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumCategoryTagRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.ForumCategoryService;
+import com.mentalhealthforum.mentalhealthforum_backend.utils.NormalizeUtils;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.SlugsUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +25,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -35,19 +38,25 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     private final TransactionalOperator transactionalOperator;
     private final ForumCategoryRepository forumCategoryRepository;
     private final ForumCategoryTagRepository forumCategoryTagRepository;
+    private final ForumThreadRepository forumThreadRepository;
 
     public ForumCategoryServiceImpl(TransactionalOperator transactionalOperator,
                                     ForumCategoryRepository forumCategoryRepository,
-                                    ForumCategoryTagRepository forumCategoryTagRepository) {
+                                    ForumCategoryTagRepository forumCategoryTagRepository,
+                                    ForumThreadRepository forumThreadRepository) {
         this.transactionalOperator = transactionalOperator;
         this.forumCategoryRepository = forumCategoryRepository;
         this.forumCategoryTagRepository = forumCategoryTagRepository;
+        this.forumThreadRepository = forumThreadRepository;
     }
 
     // ==================== SLUG GENERATION ====================
 
     @Override
     public Mono<SlugGenerationResponse> generateSlug(String name, UUID excludeCategoryId) {
+
+        // Slug generation is a utility, no permission check needed (admin only endpoint already)
+
         String baseSlug = SlugsUtil.generateSlug(name);
 
         if (baseSlug.isEmpty()) {
@@ -67,7 +76,14 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     // ==================== CATEGORY CRUD ====================
 
     @Override
-    public Mono<ForumCategoryEntity> createCategory(CreateForumCategoryRequest request) {
+    public Mono<ForumCategoryResponse> createCategory(CreateForumCategoryRequest request, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_CREATED.checkPermission(viewerContext)
+                .then(doCreateCategory(request))
+                .flatMap(this::mapToResponseWithTags);
+    }
+
+    private Mono<ForumCategoryEntity> doCreateCategory(CreateForumCategoryRequest request) {
+
         String slug = request.getSlug();
         if (slug == null || slug.isBlank()) {
             slug = SlugsUtil.generateSlug(request.getName());
@@ -78,12 +94,20 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
                 .then(validateNoDuplicates(request.getName(), finalSlug))
                 .then(createAndSaveCategory(request, finalSlug))
                 .flatMap(savedCategory -> addTagsToCategory(savedCategory, request.getTags())
-                        .thenReturn(savedCategory))
+                        .thenReturn(savedCategory)
+                )
                 .as(transactionalOperator::transactional);
+
     }
 
     @Override
-    public Mono<ForumCategoryEntity> updateCategory(UUID id, UpdateForumCategoryRequest request) {
+    public Mono<ForumCategoryResponse> updateCategory(UUID id, UpdateForumCategoryRequest request, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_UPDATED.checkPermission(viewerContext)
+                .then(doUpdateCategory(id, request))
+                .flatMap(this::mapToResponseWithTags);
+    }
+
+    private Mono<ForumCategoryEntity> doUpdateCategory(UUID id, UpdateForumCategoryRequest request) {
         return forumCategoryRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with id '" + id + "' not found",
@@ -106,7 +130,13 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<Void> softDeleteCategory(UUID id) {
+    public Mono<Void> softDeleteCategory(UUID id, ViewerContext viewerContext) {
+       return ModerationAction.CATEGORY_SOFT_DELETED.checkPermission(viewerContext)
+                .then(doSoftDeleteCategory(id));
+
+    }
+
+    private Mono<Void> doSoftDeleteCategory(UUID id) {
         return forumCategoryRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with id '" + id + "' not found",
@@ -124,7 +154,13 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<ForumCategoryEntity> reactivateCategory(UUID id) {
+    public Mono<ForumCategoryResponse> reactivateCategory(UUID id, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_REACTIVATED.checkPermission(viewerContext)
+                .then(doReactivateCategory(id))
+                .flatMap(this::mapToResponseWithTags);
+    }
+
+    private Mono<ForumCategoryEntity> doReactivateCategory(UUID id) {
         return forumCategoryRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category not found",
@@ -153,9 +189,6 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
                                                 ErrorCode.INVALID_HIERARCHY));
                                     }
 
-                                    // TODO: When threads are implemented, consider if inactive threads
-                                    // should also be reactivated or remain inactive.
-
                                     category.setIsActive(true);
                                     return forumCategoryRepository.save(category);
                                 });
@@ -167,7 +200,12 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<Void> purgeCategory(UUID id) {
+    public Mono<Void> purgeCategory(UUID id, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_PURGED.checkPermission(viewerContext)
+                .then(doPurgeCategory(id));
+    }
+
+    private Mono<Void> doPurgeCategory(UUID id) {
         return forumCategoryRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category not found",
@@ -183,26 +221,40 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
                                             "Cannot purge category with active child categories",
                                             ErrorCode.INVALID_HIERARCHY));
                                 }
-                                // TODO: When threads are implemented, add check here:
-                                // if (threadRepository.existsByCategoryId(id)) {
-                                //     return Mono.error(new ApiException(
-                                //         "Cannot purge category with existing threads. Delete or move threads first.",
-                                //         ErrorCode.VALIDATION_FAILED));
-                                // }
+
+                                return forumThreadRepository.existsByCategoryId(id)
+                                        .flatMap(hasThreads -> {
+                                            if(hasThreads){
+                                                return Mono.error(new ApiException(
+                                                        "Cannot purge category with existing threads. Delete or move threads first.",
+                                                        ErrorCode.VALIDATION_FAILED
+                                                ));
+                                            }
+
+                                            // Delete associated tags first, then delete category
+                                            return forumCategoryTagRepository.deleteByCategoryId(id)
+                                                    .then(forumCategoryRepository.delete(category));
+                                        });
 
                                 // TODO: When other dependencies are added (subscriptions, analytics, etc.),
                                 // add similar checks here to prevent orphaned records.
-
-                                // Delete associated tags first, then delete category
-                                return forumCategoryTagRepository.deleteByCategoryId(id)
-                                        .then(forumCategoryRepository.delete(category));
                             });
                 })
                 .as(transactionalOperator::transactional);
     }
 
     @Override
-    public Mono<Void> purgeOldInactiveCategories(int daysOld) {
+    public Mono<Void> purgeOldInactiveCategories(int daysOld, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_PURGE_OLD.checkPermission(viewerContext)
+                .then(doPurgeOldInactiveCategories(daysOld));
+    }
+
+    @Override
+    public Mono<Void> purgeOldInactiveCategoriesInternal(int daysOld) {
+        return doPurgeOldInactiveCategories(daysOld);
+    }
+
+    private Mono<Void> doPurgeOldInactiveCategories(int daysOld) {
         Instant cutoffDate = Instant.now().minus(Duration.ofDays(daysOld));
 
         return forumCategoryRepository.findInactiveCategoriesOlderThan(cutoffDate)
@@ -216,54 +268,81 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
                 .doOnError(e -> log.error("Error purging old categories: {}", e.getMessage()));
     }
 
+    // ==================== QUERIES (with permission checks where needed) ====================
+
     @Override
-    public Mono<ForumCategoryEntity> getCategoryById(UUID id) {
+    public Mono<ForumCategoryResponse> getCategoryById(UUID id) {
+        // Public - no permission check needed
         return forumCategoryRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with id '" + id + "' not found",
-                        ErrorCode.RESOURCE_NOT_FOUND)));
+                        ErrorCode.RESOURCE_NOT_FOUND)))
+                .flatMap(this::mapToResponseWithTags);
     }
 
     @Override
-    public Mono<ForumCategoryEntity> getCategoryBySlug(String slug) {
+    public Mono<ForumCategoryResponse> getCategoryBySlug(String slug) {
+        // Public - no permission check needed
         return forumCategoryRepository.findBySlug(slug)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with slug '" + slug + "' not found",
-                        ErrorCode.RESOURCE_NOT_FOUND)));
+                        ErrorCode.RESOURCE_NOT_FOUND)))
+                .flatMap(this::mapToResponseWithTags);
     }
 
     @Override
-    public Flux<ForumCategoryEntity> getAllActiveCategories() {
-        return forumCategoryRepository.findByIsActiveTrueOrderBySortOrderAsc();
+    public Mono<PaginatedResponse<ForumCategoryResponse>> getActiveCategories(
+            int page,
+            int size,
+            String tagName,
+            UUID parentCategoryId,
+            Boolean isParent,
+            String search,
+            String sortBy,
+            String sortDirection
+    ) {
+        // Public - no permission check needed
+        return executeGetCategoriesQuery(page, size, tagName, parentCategoryId, isParent, search, true, sortBy, sortDirection);
     }
 
     @Override
-    public Flux<ForumCategoryEntity> getAllCategories() {
-        return forumCategoryRepository.findAll()
-                .sort(Comparator.comparing(ForumCategoryEntity::getSortOrder)
-                        .thenComparing(ForumCategoryEntity::getName));
+    public Mono<PaginatedResponse<ForumCategoryResponse>> getAllCategories(
+            int page,
+            int size,
+            String tagName,
+            UUID parentCategoryId,
+            Boolean isParent,
+            String search,
+            Boolean isActive,
+            String sortBy,
+            String sortDirection,
+            ViewerContext viewerContext
+    ) {
+        return ModerationAction.CATEGORY_VIEW_INACTIVE.checkPermission(viewerContext)
+                .then(executeGetCategoriesQuery(page, size, tagName, parentCategoryId, isParent, search, isActive, sortBy, sortDirection));
+
     }
 
     @Override
-    public Flux<ForumCategoryEntity> getInactiveCategories() {
-        return forumCategoryRepository.findByIsActiveFalse()
-                .sort(Comparator.comparing(ForumCategoryEntity::getCreatedAt).reversed());
-    }
-
-    @Override
-    public Mono<Long> getInactiveCount() {
-        return forumCategoryRepository.countByIsActiveFalse();
+    public Mono<Long> getInactiveCount(ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_VIEW_INACTIVE.checkPermission(viewerContext)
+                .then(forumCategoryRepository.countByIsActiveFalse());
     }
 
     // ==================== HIERARCHY ====================
 
     @Override
     public Flux<ForumCategoryHierarchyDto> getCategoryHierarchy() {
+        // Public - no permission check needed
         return forumCategoryRepository.findRootCategories()
                 .flatMap(root -> Mono.zip(
-                        Mono.just(root),
-                        forumCategoryRepository.findChildCategories(root.getId()).collectList(),
-                        forumCategoryTagRepository.findByCategoryId(root.getId()).collectList()
+                        mapToResponseWithTags(root),
+                        forumCategoryRepository.findChildCategories(root.getId())
+                                .flatMap(this::mapToResponseWithTags)
+                                .collectList(),
+                        forumCategoryTagRepository.findByCategoryId(root.getId())
+                                .map(this::mapTagToResponse)
+                                .collectList()
                 ))
                 .map(tuple -> new ForumCategoryHierarchyDto(
                         tuple.getT1(),
@@ -273,25 +352,37 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Flux<ForumCategoryEntity> getRootCategories() {
-        return forumCategoryRepository.findRootCategories();
+    public Flux<ForumCategoryResponse> getRootCategories() {
+        // Public - no permission check needed
+        return forumCategoryRepository.findRootCategories()
+                .flatMap(this::mapToResponseWithTags);
     }
 
     @Override
-    public Flux<ForumCategoryEntity> getChildCategories(UUID parentId) {
-        return forumCategoryRepository.findChildCategories(parentId);
+    public Flux<ForumCategoryResponse> getChildCategories(UUID parentId) {
+        // Public - no permission check needed
+        return forumCategoryRepository.findChildCategories(parentId)
+                .flatMap(this::mapToResponseWithTags);
     }
 
     // ==================== TAG OPERATIONS ====================
 
     @Override
-    public Flux<ForumCategoryTagEntity> getTags(UUID categoryId) {
-        return forumCategoryTagRepository.findByCategoryId(categoryId);
+    public Flux<ForumCategoryTagResponse> getTags(UUID categoryId) {
+        // Public - no permission check needed (tags are visible to everyone)
+        return forumCategoryTagRepository.findByCategoryId(categoryId)
+                .map(this::mapTagToResponse);
     }
 
     @Override
-    public Mono<ForumCategoryTagEntity> addTag(UUID categoryId, ForumCategoryTagRequest request) {
-        return forumCategoryRepository.findById(categoryId)
+    public Mono<ForumCategoryTagResponse> addTag(UUID categoryId, ForumCategoryTagRequest request, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_TAG_ADDED.checkPermission(viewerContext)
+                        .then(doAddTag(categoryId, request))
+                .map(this::mapTagToResponse);
+    }
+
+    private Mono<ForumCategoryTagEntity> doAddTag(UUID categoryId, ForumCategoryTagRequest request) {
+        return  forumCategoryRepository.findById(categoryId)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with id '" + categoryId + "' not found",
                         ErrorCode.RESOURCE_NOT_FOUND)))
@@ -310,7 +401,13 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<ForumCategoryTagEntity> updateTagDescription(UUID categoryId, String tagName, String description) {
+    public Mono<ForumCategoryTagResponse> updateTagDescription(UUID categoryId, String tagName, String description, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_TAG_UPDATED.checkPermission(viewerContext)
+                .then(doUpdateTagDescription(categoryId, tagName, description))
+                .map(this::mapTagToResponse);
+    }
+
+    private Mono<ForumCategoryTagEntity> doUpdateTagDescription(UUID categoryId, String tagName, String description) {
         return forumCategoryTagRepository.findByCategoryIdAndTagName(categoryId, tagName)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Tag '" + tagName + "' not found in category '" + categoryId + "'",
@@ -323,7 +420,12 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<Void> removeTag(UUID categoryId, String tagName) {
+    public Mono<Void> removeTag(UUID categoryId, String tagName, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_TAG_REMOVED.checkPermission(viewerContext)
+                .then(doRemoveTag(categoryId, tagName));
+    }
+
+    private Mono<Void> doRemoveTag(UUID categoryId, String tagName) {
         return forumCategoryTagRepository.findByCategoryIdAndTagName(categoryId, tagName)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Tag '" + tagName + "' not found in category '" + categoryId + "'",
@@ -333,7 +435,13 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     @Override
-    public Mono<Void> replaceTags(UUID categoryId, List<ForumCategoryTagRequest> tags) {
+    public Mono<Void> replaceTags(UUID categoryId, List<ForumCategoryTagRequest> tags, ViewerContext viewerContext) {
+        return ModerationAction.CATEGORY_TAG_REPLACED.checkPermission(viewerContext)
+                .then(doReplaceTags(categoryId, tags));
+
+    }
+
+    private Mono<Void> doReplaceTags(UUID categoryId, List<ForumCategoryTagRequest> tags) {
         return forumCategoryRepository.findById(categoryId)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with id '" + categoryId + "' not found",
@@ -388,7 +496,7 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
     }
 
     private Mono<ForumCategoryEntity> createAndSaveCategory(CreateForumCategoryRequest request, String slug) {
-        ForumCategoryEntity entity = ForumCategoryEntity.builder()
+        ForumCategoryEntity category = ForumCategoryEntity.builder()
                 .name(request.getName())
                 .slug(slug)
                 .description(request.getDescription())
@@ -399,19 +507,19 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
                 .sortOrder(request.getSortOrder())
                 .build();
 
-        if (request.getParticipationRequirements() != null) {
-            entity.setParticipationRequirements(request.getParticipationRequirements());
-        }
-        if (request.getDefaultThreadSettings() != null) {
-            entity.setDefaultThreadSettings(request.getDefaultThreadSettings());
-        }
-        return forumCategoryRepository.save(entity);
+        return forumCategoryRepository.save(category);
     }
 
     private Mono<ForumCategoryTagEntity> saveTag(UUID categoryId, ForumCategoryTagRequest request) {
+        String normalizedTagName = NormalizeUtils.normalizeTag(request.name());
+
+        if (normalizedTagName.isEmpty()) {
+            return Mono.error(new ApiException("Tag name contains no valid characters", ErrorCode.VALIDATION_FAILED));
+        }
+
         ForumCategoryTagEntity tag = ForumCategoryTagEntity.builder()
                 .categoryId(categoryId)
-                .tagName(request.name())
+                .tagName(normalizedTagName)
                 .tagDescription(request.description())
                 .build();
         return forumCategoryTagRepository.save(tag);
@@ -437,12 +545,6 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
         if (request.getContentWarningCustomText() != null) existing.setContentWarningCustomText(request.getContentWarningCustomText());
         if (request.getSortOrder() != null) existing.setSortOrder(request.getSortOrder());
         if (request.getIsActive() != null) existing.setIsActive(request.getIsActive());
-        if (request.getParticipationRequirements() != null) {
-            existing.setParticipationRequirements(request.getParticipationRequirements());
-        }
-        if (request.getDefaultThreadSettings() != null) {
-            existing.setDefaultThreadSettings(request.getDefaultThreadSettings());
-        }
 
         if (request.getTags() != null) {
             return forumCategoryTagRepository.deleteByCategoryId(existing.getId())
@@ -451,5 +553,88 @@ public class ForumCategoryServiceImpl implements ForumCategoryService {
         }
 
         return forumCategoryRepository.save(existing);
+    }
+
+    private Mono<PaginatedResponse<ForumCategoryResponse>> executeGetCategoriesQuery(
+            int page,
+            int size,
+            String tagName,
+            UUID parentCategoryId,
+            Boolean isParent,
+            String search,
+            Boolean isActive,
+            String sortBy,
+            String sortDirection
+    ){
+        if(page < 0 || size <= 0){
+            throw new InvalidPaginationException();
+        }
+
+        int offset = page * size;
+        String effectiveTag = (tagName == null || tagName.isBlank()) ? null : tagName.trim();
+        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
+        String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+
+        // User-friendly override: parent_category_id takes precedence
+        if(parentCategoryId != null && isParent != null){
+            log.warn("Both parent_category_id and is_parent=true provided. Ignoring is_parent in favor of parent_category_id.");
+            isParent = null;
+        }
+
+        return forumCategoryRepository.findAllCategoriesPaginated(
+                effectiveTag, parentCategoryId, isParent, effectiveSearch, isActive, effectiveSortBy, effectiveSortDirection, size, offset
+        )
+                .flatMap(this::mapToResponseWithTags)
+                .collectList()
+                .zipWith(forumCategoryRepository.countAllCategoriesWithFilters(effectiveTag, parentCategoryId, isParent, effectiveSearch, isActive))
+                .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+
+    }
+
+    private String validateAndNormalizeSortBy(String sortBy) {
+        Set<String> allowedFields = Set.of("sort_order", "name", "created_at");
+        if(sortBy == null || !allowedFields.contains(sortBy)){
+            return "sort_order";
+        }
+        return sortBy;
+    }
+
+    private String determineSortDirection(String sortDirection, String effectiveSortBy) {
+        if(sortDirection != null){
+            return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
+        }
+        return "ASC";
+    }
+
+    private Mono<ForumCategoryResponse> mapToResponseWithTags(ForumCategoryEntity category){
+        return  forumCategoryTagRepository.findByCategoryId(category.getId())
+                    .map(this::mapTagToResponse)
+                        .collectList()
+                        .map(tags -> ForumCategoryResponse.builder()
+                                .id(category.getId())
+                                .name(category.getName())
+                                .slug(category.getSlug())
+                                .description(category.getDescription())
+                                .colorTheme(category.getColorTheme())
+                                .parentCategoryId(category.getParentCategoryId())
+                                .contentWarningType(category.getContentWarningType())
+                                .contentWarningCustomText(category.getContentWarningCustomText())
+                                .sortOrder(category.getSortOrder())
+                                .isActive(category.getIsActive())
+                                .createdAt(category.getCreatedAt())
+                                .isParent(category.isParent())
+                                .isChild(category.isChild())
+                                .tags(tags)
+                                .build());
+
+    }
+
+    private ForumCategoryTagResponse mapTagToResponse(ForumCategoryTagEntity tag) {
+        return ForumCategoryTagResponse.builder()
+                .id(tag.getId())
+                .name(tag.getTagName())
+                .description(tag.getTagDescription())
+                .build();
     }
 }

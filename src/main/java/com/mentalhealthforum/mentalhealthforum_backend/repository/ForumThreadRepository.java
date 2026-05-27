@@ -172,6 +172,9 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
     // ==================== EXISTENCE CHECKS ====================
     Mono<Boolean> existsByIdAndIsDeletedFalse(UUID id);
 
+    @Query("SELECT EXISTS(SELECT 1 FROM forum_threads WHERE category_id = :categoryId)")
+    Mono<Boolean> existsByCategoryId(@Param("categoryId") UUID categoryId);
+
     // ==================== THREAD ACTIONS ====================
 
     @Query("UPDATE forum_threads SET thread_status = :status::thread_status_enum, updated_at = NOW() WHERE id = :threadId")

@@ -25,10 +25,10 @@ public class ForumCategoryTagEntity {
     private UUID id;  // Let database generate via gen_random_uuid()
 
     @Column("category_id")
-    private UUID categoryId ;
+    private UUID categoryId;
 
-    @Column("tag_name ")
-    private String tagName ;
+    @Column("tag_name")
+    private String tagName;
 
     @Column("tag_description")
     private String tagDescription;
