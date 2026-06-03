@@ -68,6 +68,8 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                         .withEnum("moderation_action_enum", ModerationAction.class)
                         .withEnum("dismissal_reason_enum", DismissalReason.class)
                         .withEnum("report_reason_code_enum", ReportReasonCode.class)
+                        .withEnum("warning_type_enum", WarningType.class)
+                        .withEnum("restriction_type_enum", RestrictionType.class)
                         .build())
                 .build();
     }
@@ -119,7 +121,11 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                 new DismissalReasonReadingConverter(),
                 new DismissalReasonWritingConverter(),
                 new ReportReasonCodeReadingConverter(),
-                new ReportReasonCodeWritingConverter()
+                new ReportReasonCodeWritingConverter(),
+                new WarningTypeReadingConverter(),
+                new WarningTypeWritingConverter(),
+                new RestrictionTypeReadingConverter(),
+                new RestrictionTypeWritingConverter()
         );
     }
 
@@ -163,6 +169,10 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
         converters.add(new DismissalReasonWritingConverter());
         converters.add(new ReportReasonCodeReadingConverter());
         converters.add(new ReportReasonCodeWritingConverter());
+        converters.add(new WarningTypeReadingConverter());
+        converters.add(new WarningTypeWritingConverter());
+        converters.add(new RestrictionTypeReadingConverter());
+        converters.add(new RestrictionTypeWritingConverter());
 
 
         // Add JSONB converters

@@ -226,4 +226,15 @@ public class AppUserEntity implements PrivilegedUser, OnboardingProfileData {
     public String timezone() {
         return this.timezone;
     }
+
+    // Returns a privacy-respecting display identifier.
+    public String getPublicIdentifier() {
+        // Prefer user-chosen display name
+        if(this.displayName != null && !this.displayName.isBlank()){
+            return this.displayName;
+        }
+
+        // Fallback to initials
+        return this.getInitials();
+    }
 }
