@@ -37,7 +37,9 @@ public class ThreadResponse {
     private List<String> tags;
     private boolean isSticky;
     private boolean isFeatured;
+    private boolean isBookmarked;
 
+    private Integer bookmarkCount;
     private Integer postCount;
     private Integer viewCount;
 

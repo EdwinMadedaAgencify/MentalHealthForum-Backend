@@ -11,10 +11,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.LastModifiedBy;
-import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.*;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -112,6 +109,9 @@ public class ForumThreadEntity {
 
     @Column("last_activity_at")
     private Instant lastActivityAt;
+
+    @Transient
+    private Boolean isBookmarked;
 
     // --- JSONB Getter/Setter ---
     public ThreadSettings getThreadSettings(){

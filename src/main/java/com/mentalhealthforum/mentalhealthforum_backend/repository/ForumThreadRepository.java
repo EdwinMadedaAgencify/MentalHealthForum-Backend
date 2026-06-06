@@ -21,7 +21,10 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
 
     // ==================== REFERENCE TABLES ====================
     @Query("""
-        SELECT * FROM forum_threads
+        SELECT t.*,
+                CASE WHEN b.user_id IS NOT NULL THEN true ELSE false END as is_bookmarked
+         FROM forum_threads t
+         LEFT JOIN thread_bookmarks b ON t.id = b.thread_id AND b.user_id = :currentUserId
         WHERE (:categoryId IS NULL OR category_id = :categoryId::uuid)
             AND (:creatorId IS NULL OR creator_id = :creatorId::uuid)
             AND (:threadType IS NULL OR thread_type = :threadType::thread_type_enum)
@@ -33,14 +36,17 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
                      THEN content_warning_type != 'NONE'
                      ELSE content_warning_type = 'NONE' END))
             AND (:search IS NULL OR
-                LOWER(title) LIKE '%' || LOWER(:search) || '%')
+                LOWER(t.title) LIKE '%' || LOWER(:search) || '%')
+            AND (:isBookmarked IS NULL OR
+                 (:isBookmarked = true AND b.user_id IS NOT NULL) OR
+                 (:isBookmarked = false AND b.user_id IS NULL))
         ORDER BY
             is_sticky DESC,
             CASE :sortDirection
                 WHEN 'DESC' THEN
                     CASE :sortBy
-                        WHEN 'created_at' THEN created_at::text
-                        WHEN 'last_activity_at' THEN last_activity_at::text
+                        WHEN 'created_at' THEN t.created_at::text
+                        WHEN 'last_activity_at' THEN t.last_activity_at::text
                         WHEN 'post_count' THEN LPAD(post_count::text, 10, '0')
                         WHEN 'view_count' THEN LPAD(view_count::text, 10, '0')
                         WHEN 'title' THEN title
@@ -51,8 +57,8 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
             CASE :sortDirection
                 WHEN 'ASC' THEN
                     CASE :sortBy
-                        WHEN 'created_at' THEN created_at::text
-                        WHEN 'last_activity_at' THEN last_activity_at::text
+                        WHEN 'created_at' THEN t.created_at::text
+                        WHEN 'last_activity_at' THEN t.last_activity_at::text
                         WHEN 'post_count' THEN LPAD(post_count::text, 10, '0')
                         WHEN 'view_count' THEN LPAD(view_count::text, 10, '0')
                         WHEN 'title' THEN title
@@ -71,6 +77,8 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
             @Param("isDeleted") Boolean isDeleted,
             @Param("isFeatured") Boolean isFeatured,
             @Param("hasContentWarning") Boolean hasContentWarning,
+            @Param("currentUserId") UUID currentUserId,
+            @Param("isBookmarked") Boolean isBookmarked,
             @Param("search") String search,
             @Param("sortBy") String sortBy,
             @Param("sortDirection") String sortDirection,
@@ -79,7 +87,8 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
     );
 
     @Query("""
-        SELECT COUNT(*) FROM forum_threads
+        SELECT COUNT(*) FROM forum_threads t
+        LEFT JOIN thread_bookmarks b ON t.id = b.thread_id AND b.user_id = :currentUserId
         WHERE (:categoryId IS NULL OR category_id = :categoryId::uuid)
             AND (:creatorId IS NULL OR creator_id = :creatorId::uuid)
             AND (:threadType IS NULL OR thread_type = :threadType::thread_type_enum)
@@ -91,7 +100,10 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
                      THEN content_warning_type != 'NONE'
                      ELSE content_warning_type = 'NONE' END))
             AND (:search IS NULL OR
-                LOWER(title) LIKE '%' || LOWER(:search) || '%')
+                LOWER(t.title) LIKE '%' || LOWER(:search) || '%')
+            AND (:isBookmarked IS NULL OR
+                 (:isBookmarked = true AND b.user_id IS NOT NULL) OR
+                 (:isBookmarked = false AND b.user_id IS NULL))
         """)
     Mono<Long> countAllPaginated(
             @Param("categoryId") UUID categoryId,
@@ -101,6 +113,8 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
             @Param("isDeleted") Boolean isDeleted,
             @Param("isFeatured") Boolean isFeatured,
             @Param("hasContentWarning") Boolean hasContentWarning,
+            @Param("currentUserId") UUID currentUserId,
+            @Param("isBookmarked") Boolean isBookmarked,
             @Param("search") String search
     );
 
