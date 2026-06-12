@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 @Setter
 @Getter
-public class UserResponse {
+public class    UserResponse {
 
     // -- Core Identity ---
     private UUID userId; // The Keycloak ID
@@ -50,6 +50,8 @@ public class UserResponse {
     // --- Cached Keycloak Data (UI Context) ---
     private Set<String> roles;
     private Set<String> groups;
+
+    private Boolean isConnected;
 
     // --- User Preferences ---
     // private NotificationPreferences notificationPreferences;

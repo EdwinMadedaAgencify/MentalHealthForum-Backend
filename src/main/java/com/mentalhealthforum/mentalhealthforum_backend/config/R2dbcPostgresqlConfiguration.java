@@ -70,6 +70,7 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                         .withEnum("report_reason_code_enum", ReportReasonCode.class)
                         .withEnum("warning_type_enum", WarningType.class)
                         .withEnum("restriction_type_enum", RestrictionType.class)
+                        .withEnum("connection_status_enum", ConnectionStatus.class)
                         .build())
                 .build();
     }
@@ -125,7 +126,9 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
                 new WarningTypeReadingConverter(),
                 new WarningTypeWritingConverter(),
                 new RestrictionTypeReadingConverter(),
-                new RestrictionTypeWritingConverter()
+                new RestrictionTypeWritingConverter(),
+                new ConnectionStatusReadingConverter(),
+                new ConnectionStatusWritingConverter()
         );
     }
 
@@ -173,6 +176,8 @@ public class R2dbcPostgresqlConfiguration extends AbstractR2dbcConfiguration {
         converters.add(new WarningTypeWritingConverter());
         converters.add(new RestrictionTypeReadingConverter());
         converters.add(new RestrictionTypeWritingConverter());
+        converters.add(new ConnectionStatusReadingConverter());
+        converters.add(new ConnectionStatusWritingConverter());
 
 
         // Add JSONB converters

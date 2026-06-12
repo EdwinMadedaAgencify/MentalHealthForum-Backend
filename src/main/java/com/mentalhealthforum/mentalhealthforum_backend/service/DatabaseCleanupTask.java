@@ -1,10 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.service;
 
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.OtpCredentialRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.PendingUserRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.VerificationTokenRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.service.impl.UserServiceImpl;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,18 +18,21 @@ public class DatabaseCleanupTask {
     private final PendingUserRepository pendingUserRepository;
     private final ForumCategoryService forumCategoryService;
     private final ForumThreadRepository forumThreadRepository;
+    private final UserConnectRepository userConnectRepository;
 
     public DatabaseCleanupTask(
             OtpCredentialRepository otpCredentialRepository,
             VerificationTokenRepository verificationTokenRepository,
             PendingUserRepository pendingUserRepository,
             ForumCategoryService forumCategoryService,
-            ForumThreadRepository forumThreadRepository) {
+            ForumThreadRepository forumThreadRepository,
+            UserConnectRepository userConnectRepository) {
         this.otpCredentialRepository = otpCredentialRepository;
         this.verificationTokenRepository = verificationTokenRepository;
         this.pendingUserRepository = pendingUserRepository;
         this.forumCategoryService = forumCategoryService;
         this.forumThreadRepository = forumThreadRepository;
+        this.userConnectRepository = userConnectRepository;
     }
 
     // Runs at 3:00 AM every day
@@ -94,4 +93,16 @@ public class DatabaseCleanupTask {
                         count -> log.info("Unlock {} expired threads", count)
                 );
     }
+
+    // Run at 2 AM daily
+    @Scheduled(cron = "0 0 2 * * ?")
+    public void cleanupDeclinedConnections(){
+        log.info("Starting cleanup of declined connections older than 30 days");
+        userConnectRepository.deleteDeclinedOlderThan(30)
+                .subscribe(
+                    count -> log.info("Cleaned up {} declined connections", count),
+                        error -> log.error("Error cleaning up declined connections: {}", error.getMessage())
+                );
+    }
+
 }
