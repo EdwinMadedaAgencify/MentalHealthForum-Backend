@@ -11,10 +11,10 @@ import java.util.UUID;
 public class FocusCategoryResponse {
 
     private UUID id;
-    private UUID userId;
     private UUID categoryId;
-    private String categoryName;
     private String categorySlug;
+    private String categoryName;
+    private String categoryDescription;
     private Boolean notificationEnabled;
     private Instant focusedAt;
 
