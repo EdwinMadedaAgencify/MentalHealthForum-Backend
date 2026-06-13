@@ -7,8 +7,10 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.FocusCategoryEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.FocusCategoryRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumCategoryRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.FocusCategoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,14 +30,17 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
     private final TransactionalOperator transactionalOperator;
     private final FocusCategoryRepository focusCategoryRepository;
     private final ForumCategoryRepository forumCategoryRepository;
+    private final ForumThreadRepository forumThreadRepository;
 
     public FocusCategoryServiceImpl(
             TransactionalOperator transactionalOperator,
             FocusCategoryRepository focusCategoryRepository,
-            ForumCategoryRepository forumCategoryRepository) {
+            ForumCategoryRepository forumCategoryRepository,
+            ForumThreadRepository forumThreadRepository) {
         this.transactionalOperator = transactionalOperator;
         this.focusCategoryRepository = focusCategoryRepository;
         this.forumCategoryRepository = forumCategoryRepository;
+        this.forumThreadRepository = forumThreadRepository;
     }
 
     @Override
@@ -70,10 +75,9 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
     public Mono<PaginatedResponse<FocusCategoryResponse>> getFocusCategories(
             int page,
             int size,
-            String search,
+            Boolean notificationEnabled, String search,
             String sortBy,
             String sortDirection,
-            Boolean notificationEnabled,
             ViewerContext viewerContext
     ){
 
@@ -87,10 +91,10 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
         String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
         String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
 
-        return focusCategoryRepository.findPaginatedByUserId(userId, effectiveSearch, notificationEnabled, effectiveSortBy, effectiveSortDirection, size, offset)
+        return focusCategoryRepository.findPaginatedByUserId(userId, notificationEnabled, effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset)
                 .flatMap(this::mapToResponse)
                 .collectList()
-                .zipWith(focusCategoryRepository.countByUserIdWithFilters(userId, effectiveSearch, notificationEnabled))
+                .zipWith(focusCategoryRepository.countByUserIdWithFilters(userId, notificationEnabled, effectiveSearch))
                 .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
 
     }
@@ -138,16 +142,29 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
     }
 
     private Mono<FocusCategoryResponse> mapToResponse(FocusCategoryEntity focusCategory){
-        return forumCategoryRepository.findById(focusCategory.getCategoryId())
-                .map(category -> FocusCategoryResponse.builder()
-                        .id(focusCategory.getId())
-                        .categoryId(category.getId())
-                        .categoryName(category.getName())
-                        .categorySlug(category.getSlug())
-                        .categoryDescription(category.getDescription())
-                        .notificationEnabled(focusCategory.getNotificationEnabled())
-                        .focusedAt(focusCategory.getCreatedAt())
-                        .build());
+        return Mono.zip(
+                forumCategoryRepository.findById(focusCategory.getCategoryId()),
+                forumThreadRepository.countActiveThreadsByCategory(focusCategory.getCategoryId())
+        ).map(tuple-> {
+            ForumCategoryEntity category = tuple.getT1();
+            Long threadCount = tuple.getT2();
+
+            return FocusCategoryResponse.builder()
+                    .id(focusCategory.getId())
+                    .notificationEnabled(focusCategory.getNotificationEnabled())
+                    .focusedAt(focusCategory.getCreatedAt())
+                    .categoryId(category.getId())
+                    .categoryName(category.getName())
+                    .categorySlug(category.getSlug())
+                    .categoryDescription(category.getDescription())
+                    .colorTheme(category.getColorTheme())
+                    .parentCategoryId(category.getParentCategoryId())
+                    .contentWarningType(category.getContentWarningType())
+                    .threadCount(threadCount.intValue())
+                    .isParent(category.isParent())
+                    .isChild(category.isChild())
+                    .build();
+        });
     }
 
     private String validateAndNormalizeSortBy(String sortBy) {

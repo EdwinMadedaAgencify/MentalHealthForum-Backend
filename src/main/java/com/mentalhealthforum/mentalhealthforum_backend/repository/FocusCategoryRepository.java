@@ -54,8 +54,8 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
     """)
     Flux<FocusCategoryEntity>findPaginatedByUserId(
         @Param("userId") UUID userId,
-        @Param("search") String search,
         @Param("notificationEnabled") Boolean notificationEnabled,
+        @Param("search") String search,
         @Param("sortBy") String sortBy,
         @Param("sortDirection") String sortDirection,
         @Param("limit") int limit,
@@ -74,8 +74,8 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
     """)
     Mono<Long> countByUserIdWithFilters(
             @Param("userId") UUID userId,
-            @Param("search") String search,
-            @Param("notificationEnabled") Boolean notificationEnabled
+            @Param("notificationEnabled") Boolean notificationEnabled,
+            @Param("search") String search
     );
 
 

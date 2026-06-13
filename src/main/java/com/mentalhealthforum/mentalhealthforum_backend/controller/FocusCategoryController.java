@@ -67,13 +67,13 @@ public class FocusCategoryController {
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") @Parameter(description = "Page number (0-indexed)") int page,
             @RequestParam(defaultValue = "20") @Parameter(description = "Number of items per page") int size,
+            @RequestParam(required = false) @Parameter(description = "Filter by notification enabled status") Boolean notificationEnabled,
             @RequestParam(defaultValue = "") @Parameter(description = "Search by category name or description") String search,
             @RequestParam(defaultValue = "created_at") @Parameter(description = "Sort field: created_at, category_name") String sortBy,
-            @RequestParam(required = false) @Parameter(description = "Sort direction: asc or desc") String sortDirection,
-            @RequestParam(required = false) @Parameter(description = "Filter by notification enabled status") Boolean notificationEnabled
+            @RequestParam(required = false) @Parameter(description = "Sort direction: asc or desc") String sortDirection
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return focusCategoryService.getFocusCategories(page, size,search, sortBy, sortDirection, notificationEnabled, viewerContext)
+        return focusCategoryService.getFocusCategories(page, size,  notificationEnabled,search, sortBy,sortDirection, viewerContext)
                 .map(categories ->
                         ResponseEntity.ok(new StandardSuccessResponse<>("Focus categories retrieved successfully", categories)));
     }

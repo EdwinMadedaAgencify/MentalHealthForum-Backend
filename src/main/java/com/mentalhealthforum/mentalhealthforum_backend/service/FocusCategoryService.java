@@ -17,10 +17,10 @@ public interface FocusCategoryService {
     Mono<PaginatedResponse<FocusCategoryResponse>> getFocusCategories(
             int page,
             int size,
+            Boolean notificationEnabled,
             String search,
             String sortBy,
             String sortDirection,
-            Boolean notificationEnabled,
             ViewerContext viewerContext
     );
 
