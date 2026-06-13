@@ -5,6 +5,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.model.UserConnectEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.security.config.annotation.web.PortMapperDsl;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -32,6 +33,7 @@ public interface UserConnectRepository extends R2dbcRepository<UserConnectEntity
             AND c.status = 'ACCEPTED'
             AND (:search IS NULL OR
                 LOWER(other_user.display_name) LIKE '%' || LOWER(:search) || '%')
+            AND (:notificationEnabled IS NULL OR c.notification_enabled = :notificationEnabled)
         ORDER BY
             CASE :sortDirection
                 WHEN 'DESC' THEN
@@ -55,6 +57,7 @@ public interface UserConnectRepository extends R2dbcRepository<UserConnectEntity
     """)
     Flux<UserConnectEntity> findAcceptedConnectionsPaginated(
         @Param("userId") UUID userId,
+        @Param("notificationEnabled") Boolean notificationEnabled,
         @Param("search") String search,
         @Param("sortBy") String sortBy,
         @Param("sortDirection") String sortDirection,
@@ -73,9 +76,11 @@ public interface UserConnectRepository extends R2dbcRepository<UserConnectEntity
             AND c.status = 'ACCEPTED'
             AND (:search IS NULL OR
                 LOWER(other_user.display_name) LIKE '%' || LOWER(:search) || '%')
+            AND (:notificationEnabled IS NULL OR c.notification_enabled = :notificationEnabled)
     """)
     Mono<Long> countAcceptedConnectionsWithFilters(
             @Param("userId") UUID userId,
+            @Param("notificationEnabled") Boolean notificationEnabled,
             @Param("search") String search
     );
 
@@ -171,4 +176,5 @@ public interface UserConnectRepository extends R2dbcRepository<UserConnectEntity
             AND c.initiated_by != :userId -- Only incoming requests
     """)
     Mono<Long> countIncomingRequests(@Param("userId") UUID userId, @Param("status") ConnectionStatus status);
+
 }

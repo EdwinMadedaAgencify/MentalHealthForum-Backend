@@ -120,6 +120,7 @@ public class UserConnectController {
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") @Parameter(name = "page", description = "Page number (0-indexed)", example = "0") int page,
             @RequestParam(defaultValue = "20") @Parameter(name = "size", description = "Number of items per page", example = "20") int size,
+            @RequestParam(required = false) @Parameter(description = "Filter by notification enabled status") Boolean notificationEnabled,
             @RequestParam(defaultValue = "") @Parameter(name = "search", description = "Search by other user's display name", example = "john") String search,  // ✅ Fixed
             @RequestParam(defaultValue = "created_at", name = "sort_by")
             @Parameter(name = "sort_by", description = "Sort field: created_at, display_name", example = "created_at") String sortBy,
@@ -127,7 +128,7 @@ public class UserConnectController {
             @Parameter(name = "sort_direction", description = "Sort direction: asc (ascending) or desc (descending)", example = "desc") String sortDirection
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return userConnectService.getMyConnections(page, size, search, sortBy, sortDirection, viewerContext)
+        return userConnectService.getMyConnections(page, size, notificationEnabled, search, sortBy, sortDirection, viewerContext)
                 .map(connections -> ResponseEntity.ok(
                         new StandardSuccessResponse<>("Connections retrieved successfully", connections)));
     }

@@ -21,6 +21,7 @@ public interface UserConnectService {
     Mono<PaginatedResponse<UserConnectResponse>> getMyConnections(
             int page,
             int size,
+            Boolean notificationEnabled,
             String search,
             String sortBy,
             String sortDirection,

@@ -3,11 +3,11 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserConnectResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ConnectionStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.UserConnectEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.UserConnectRepository;
@@ -138,6 +138,7 @@ public class UserConnectServiceImpl implements UserConnectService {
     public Mono<PaginatedResponse<UserConnectResponse>> getMyConnections(
             int page,
             int size,
+            Boolean notificationEnabled,
             String search,
             String sortBy,
             String sortDirection,
@@ -154,11 +155,11 @@ public class UserConnectServiceImpl implements UserConnectService {
         String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
 
         return userConnectRepository.findAcceptedConnectionsPaginated(
-            currentUserId, effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset
+            currentUserId, notificationEnabled, effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset
         )
                 .flatMap(this::mapToResponse)
                 .collectList()
-                .zipWith(userConnectRepository.countAcceptedConnectionsWithFilters(currentUserId, effectiveSearch))
+                .zipWith(userConnectRepository.countAcceptedConnectionsWithFilters(currentUserId, notificationEnabled, effectiveSearch))
                 .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
     }
 
@@ -285,32 +286,54 @@ public class UserConnectServiceImpl implements UserConnectService {
     }
 
     private Mono<UserConnectResponse> mapToResponse(UserConnectEntity connection) {
+        UUID initiatedById = connection.getInitiatedBy();
+        UUID recipientId = connection.getRecipient();
+
         return Mono.zip(
-            getDisplayName(connection.getInitiatedBy()),
-            getDisplayName(connection.getRecipient())
+            getUserDetails(initiatedById),
+            getUserDetails(recipientId)
         ).map(tuple -> {
-           String initiatedByDisplayName = tuple.getT1();
-           String recipientDisplayName = tuple.getT2();
+           UserDetails initiatorDetails = tuple.getT1();
+           UserDetails recipientDetails = tuple.getT2();
 
            return  UserConnectResponse.builder()
                    .id(connection.getId())
-                   .initiatedById(connection.getInitiatedBy())
-                   .initiatedByDisplayName((initiatedByDisplayName))
-                   .recipientId(connection.getRecipient())
-                   .recipientDisplayName(recipientDisplayName)
                    .status(connection.getStatus())
                    .notificationEnabled(connection.getNotificationEnabled())
                    .createdAt(connection.getCreatedAt())
-                   .updatedAt(connection.getUpdatedAt())
+
+                   // Initiator details
+                   .initiatedById(initiatedById)
+                   .initiatorDisplayName(initiatorDetails.getDisplayName())
+                   .initiatorAvatarUrl(initiatorDetails.getAvatarUrl())
+                   .initiatorBio(initiatorDetails.getBio())
+                   .initiatorLastActiveAt(initiatorDetails.getLastActiveAt())
+
+                   // Recipient details
+                   .recipientId(connection.getRecipient())
+                   .recipientDisplayName(recipientDetails.getDisplayName())
+                   .recipientAvatarUrl(recipientDetails.getAvatarUrl())
+                   .recipientBio(recipientDetails.getBio())
+                   .recipientLastActiveAt(recipientDetails.getLastActiveAt())
                     .build();
         });
     }
 
-    private Mono<String> getDisplayName(UUID userId) {
+
+    private Mono<UserDetails> getUserDetails(UUID userId) {
         return appUserRepository.findAppUserByKeycloakId(userId.toString())
-                .map(AppUserEntity::getPublicIdentifier)
-                .defaultIfEmpty("Unknown");
+                .map(appUser -> UserDetails.builder()
+                        .displayName(appUser.getPublicIdentifier())
+                        .avatarUrl(appUser.getAvatarUrl())
+                        .bio(appUser.getBio())
+                        .lastActiveAt(appUser.getLastActiveAt())
+                        .build()
+                )
+                .defaultIfEmpty(UserDetails.builder()
+                        .displayName("Unknown")
+                        .build());
     }
+
 
     private String validateAndNormalizeSortBy(String sortBy) {
         Set<String> allowedFields = Set.of("created_at", "display_name");

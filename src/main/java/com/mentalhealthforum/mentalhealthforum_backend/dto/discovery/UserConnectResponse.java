@@ -11,14 +11,24 @@ import java.util.UUID;
 @Builder
 public class UserConnectResponse {
 
+    // Connection metadata
     private UUID id;
-    private UUID initiatedById;
-    private String initiatedByDisplayName;
-    private UUID recipientId;
-    private String recipientDisplayName;
     private ConnectionStatus status;
     private Boolean notificationEnabled;
     private Instant createdAt;
-    private Instant updatedAt;
+
+    // Initiator (who sent the request)
+    private UUID initiatedById;
+    private String initiatorDisplayName;
+    private String initiatorAvatarUrl;
+    private String initiatorBio;
+    private Instant initiatorLastActiveAt;
+
+    // Recipient (who received the request)
+    private UUID recipientId;
+    private String recipientDisplayName;
+    private String recipientAvatarUrl;
+    private String recipientBio;
+    private Instant recipientLastActiveAt;
 
 }
