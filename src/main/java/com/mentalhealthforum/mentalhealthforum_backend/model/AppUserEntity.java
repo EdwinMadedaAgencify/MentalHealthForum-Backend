@@ -130,7 +130,7 @@ public class AppUserEntity implements PrivilegedUser, OnboardingProfileData {
     private Double reputationScore = 0.0;
 
     @Column("last_active_at")
-    private Instant lastActiveAt;
+    private Instant lastActiveAt; // TODO: Implement activity tracking to update this timestamp
 
     @Column("last_posted_at")
     private Instant lastPostedAt;

@@ -11,5 +11,5 @@ public class UserDetails {
     private String displayName;
     private String avatarUrl;
     private String bio;
-    private Instant lastActiveAt;
+    private Instant lastActiveAt; // TODO: Implement activity tracking (sprint backlog)
 }
