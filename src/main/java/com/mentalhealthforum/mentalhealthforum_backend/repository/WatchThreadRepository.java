@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.model.WatchThreadEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
@@ -20,7 +21,47 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
     Mono<Long> countByUserId(UUID userId);
 
     @Query("""
-        SELECT wt.* FROM watch_threads wt
+        SELECT wt.id as watch_id,
+               wt.notification_enabled,
+               wt.created_at as watched_at,
+               t.id as thread_id,
+               t.title as thread_title,
+               t.creator_id,
+               t.category_id,
+               t.thread_type,
+               t.thread_status,
+               t.content_warning_type,
+               t.post_count,
+               t.view_count,
+               t.last_activity_at,
+               t.is_sticky,
+               t.is_featured
+        FROM watch_threads wt
+        INNER JOIN forum_threads t ON wt.thread_id = t.id
+        WHERE wt.id = :watchId AND wt.user_id = :userId
+    """)
+    Mono<WatchThreadRecord> findWatchById(
+        @Param("watchId") UUID watchId,
+        @Param("userId") UUID userId
+    );
+
+    @Query("""
+        SELECT wt.id as watch_id,
+               wt.notification_enabled,
+               wt.created_at as watched_at,
+               t.id as thread_id,
+               t.title as thread_title,
+               t.creator_id,
+               t.category_id,
+               t.thread_type,
+               t.thread_status,
+               t.content_warning_type,
+               t.post_count,
+               t.view_count,
+               t.last_activity_at,
+               t.is_sticky,
+               t.is_featured
+        FROM watch_threads wt
         INNER JOIN forum_threads t ON wt.thread_id = t.id
         WHERE wt.user_id = :userId
             AND t.is_deleted = false
@@ -75,7 +116,7 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
             END ASC NULLS FIRST
         LIMIT :limit OFFSET :offset
     """)
-    Flux<WatchThreadEntity> findPaginatedByUserId(
+    Flux<WatchThreadRecord> findPaginatedByUserId(
             @Param("userId") UUID userId,
             @Param("categoryId") UUID categoryId,
             @Param("creatorId") UUID creatorId,

@@ -2,17 +2,20 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.ContentWarningType;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumThreadEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.WatchThreadEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadBookmarkRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.WatchThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.WatchThreadService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,16 +35,19 @@ public class WatchThreadServiceImpl implements WatchThreadService {
     private final WatchThreadRepository watchThreadRepository;
     private final ForumThreadRepository forumThreadRepository;
     private final ThreadBookmarkRepository threadBookmarkRepository;
+    private final AppUserService appUserService;
 
     public WatchThreadServiceImpl(
             TransactionalOperator transactionalOperator,
             WatchThreadRepository watchThreadRepository,
             ForumThreadRepository forumThreadRepository,
-            ThreadBookmarkRepository threadBookmarkRepository) {
+            ThreadBookmarkRepository threadBookmarkRepository,
+            AppUserService appUserService) {
         this.transactionalOperator = transactionalOperator;
         this.watchThreadRepository = watchThreadRepository;
         this.forumThreadRepository = forumThreadRepository;
         this.threadBookmarkRepository = threadBookmarkRepository;
+        this.appUserService = appUserService;
     }
 
     @Override
@@ -149,40 +155,45 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                 });
     }
 
-    private Mono<WatchThreadEntity> createWatch(UUID userId, UUID threadId) {
-        WatchThreadEntity watchThread = WatchThreadEntity.builder()
+    private Mono<WatchThreadRecord> createWatch(UUID userId, UUID threadId) {
+        WatchThreadEntity watchThreadEntity = WatchThreadEntity.builder()
                 .userId(userId)
                 .threadId(threadId)
                 .notificationEnabled(false)
                 .build();
-        return watchThreadRepository.save(watchThread);
+        return watchThreadRepository.save(watchThreadEntity)
+                .flatMap(watchThread -> watchThreadRepository.findWatchById(watchThread.getId(), userId));
     }
 
-    private Mono<WatchThreadResponse> mapToResponse(WatchThreadEntity watchThread, UUID userId) {
+    private Mono<WatchThreadResponse> mapToResponse(WatchThreadRecord record, UUID userId) {
         return Mono.zip(
-            forumThreadRepository.findById(watchThread.getThreadId()),
-            threadBookmarkRepository.existsByUserIdAndThreadId(userId, watchThread.getThreadId())
+            appUserService.getUserDetails(record.creator_id()),
+            threadBookmarkRepository.existsByUserIdAndThreadId(userId, record.thread_id())
         ).map(tuple -> {
-            ForumThreadEntity thread = tuple.getT1();
+            UserDetails userDetails = tuple.getT1();
             Boolean isBookmarked = tuple.getT2();
 
             return WatchThreadResponse.builder()
-                        .id(watchThread.getId())
-                        .notificationEnabled(watchThread.getNotificationEnabled())
-                        .watchedAt(watchThread.getCreatedAt())
-                        .threadId(thread.getId())
-                        .threadTitle(thread.getTitle())
-                        .threadType(thread.getThreadType())
-                        .threadStatus(thread.getThreadStatus())
-                        .categoryId(thread.getCategoryId())
-                        .creatorId(thread.getCreatorId())
-                        .postCount(thread.getPostCount())
-                        .viewCount(thread.getViewCount())
-                        .lastActivityAt(thread.getLastActivityAt())
-                        .contentWarningType(thread.getContentWarningType())
-                        .isOpen(thread.isOpen())
-                        .isBookmarked(isBookmarked)
-                        .build();
+                    .id(record.watch_id())
+                    .notificationEnabled(record.notification_enabled())
+                    .watchedAt(record.watched_at())
+                    .threadId(record.thread_id())
+                    .threadTitle(record.thread_title())
+                    .threadType(ThreadType.fromString(record.thread_type()))
+                    .threadStatus(ThreadStatus.fromString(record.thread_status()))
+                    .categoryId(record.category_id())
+                    .creatorId(record.creator_id())
+                    .creatorDisplayName(userDetails.getDisplayName())
+                    .creatorAvatarUrl(userDetails.getAvatarUrl())
+                    .postCount(record.post_count())
+                    .viewCount(record.view_count())
+                    .lastActivityAt(record.last_activity_at())
+                    .contentWarningType(ContentWarningType.fromString(record.content_warning_type()))
+                    .isOpen(ThreadStatus.fromString(record.thread_status()) == ThreadStatus.OPEN)
+                    .isBookmarked(isBookmarked)
+                    .isSticky(record.is_sticky())
+                    .isFeatured(record.is_featured())
+                    .build();
         });
     }
 

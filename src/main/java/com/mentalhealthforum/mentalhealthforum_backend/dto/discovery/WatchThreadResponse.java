@@ -26,6 +26,8 @@ public class WatchThreadResponse {
     // Thread metadata
     private UUID categoryId;
     private UUID creatorId;
+    private String creatorDisplayName;
+    private String creatorAvatarUrl;
 
     // Quick context (most valuable for users)
     private Integer postCount;
@@ -40,5 +42,9 @@ public class WatchThreadResponse {
 
     // User-specific
     private Boolean isBookmarked;
+
+    // Thread flags
+    private Boolean isSticky;
+    private Boolean isFeatured;
 
 }
