@@ -16,22 +16,22 @@ public class DatabaseCleanupTask {
     private final OtpCredentialRepository otpCredentialRepository;
     private final VerificationTokenRepository verificationTokenRepository;
     private final PendingUserRepository pendingUserRepository;
-    private final ForumCategoryService forumCategoryService;
-    private final ForumThreadRepository forumThreadRepository;
+    private final CategoryService categoryService;
+    private final ThreadRepository threadRepository;
     private final UserConnectRepository userConnectRepository;
 
     public DatabaseCleanupTask(
             OtpCredentialRepository otpCredentialRepository,
             VerificationTokenRepository verificationTokenRepository,
             PendingUserRepository pendingUserRepository,
-            ForumCategoryService forumCategoryService,
-            ForumThreadRepository forumThreadRepository,
+            CategoryService categoryService,
+            ThreadRepository threadRepository,
             UserConnectRepository userConnectRepository) {
         this.otpCredentialRepository = otpCredentialRepository;
         this.verificationTokenRepository = verificationTokenRepository;
         this.pendingUserRepository = pendingUserRepository;
-        this.forumCategoryService = forumCategoryService;
-        this.forumThreadRepository = forumThreadRepository;
+        this.categoryService = categoryService;
+        this.threadRepository = threadRepository;
         this.userConnectRepository = userConnectRepository;
     }
 
@@ -78,7 +78,7 @@ public class DatabaseCleanupTask {
     @Scheduled(cron = "0 0 2 * * ?")
     public void purgeOldInactiveCategories(){
         log.info("Starting scheduled purge of old inactive categories");
-        forumCategoryService.purgeOldInactiveCategoriesInternal(90)
+        categoryService.purgeOldInactiveCategoriesInternal(90)
                 .subscribe(
                         v -> log.info("Scheduled purge completed"),
                         e -> log.error("Scheduled purge failed: {}", e.getMessage())
@@ -88,7 +88,7 @@ public class DatabaseCleanupTask {
     // Runs Every minute
     @Scheduled(cron = "0 * * * * *")
     public void unlockExpiredThreads(){
-        forumThreadRepository.unlockExpiredThreads()
+        threadRepository.unlockExpiredThreads()
                 .subscribe(
                         count -> log.info("Unlock {} expired threads", count)
                 );

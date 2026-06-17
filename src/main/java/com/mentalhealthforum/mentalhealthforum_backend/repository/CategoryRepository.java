@@ -1,6 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.data.repository.query.Param;
@@ -12,10 +12,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Repository
-public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEntity, UUID> {
+public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID> {
     // ==================== BASIC QUERIES ====================
 
-    Mono<ForumCategoryEntity> findBySlug(String slug);
+    Mono<CategoryEntity> findBySlug(String slug);
 
     Mono<Boolean> existsByName(String name);
 
@@ -32,9 +32,9 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
 
     // ==================== ACTIVE / INACTIVE ====================
 
-    Flux<ForumCategoryEntity> findByIsActiveTrueOrderBySortOrderAsc();
+    Flux<CategoryEntity> findByIsActiveTrueOrderBySortOrderAsc();
 
-    Flux<ForumCategoryEntity> findByIsActiveFalse();
+    Flux<CategoryEntity> findByIsActiveFalse();
 
     Mono<Long> countByIsActiveFalse();
 
@@ -44,7 +44,7 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
         AND c.created_at < :cutoffDate
         ORDER BY c.created_at ASC
     """)
-    Flux<ForumCategoryEntity> findInactiveCategoriesOlderThan(@Param("cutoffDate") Instant cutoffDate);
+    Flux<CategoryEntity> findInactiveCategoriesOlderThan(@Param("cutoffDate") Instant cutoffDate);
 
     // ==================== HIERARCHY ====================
 
@@ -54,7 +54,7 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
         AND c.parent_category_id IS NULL
         ORDER BY c.sort_order ASC
     """)
-    Flux<ForumCategoryEntity> findRootCategories();
+    Flux<CategoryEntity> findRootCategories();
 
     @Query("""
         SELECT c.* FROM forum_categories c
@@ -62,7 +62,7 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
         AND c.is_active = true
         ORDER BY c.sort_order ASC
     """)
-    Flux<ForumCategoryEntity> findChildCategories(@Param("parentId") UUID parentId);
+    Flux<CategoryEntity> findChildCategories(@Param("parentId") UUID parentId);
 
     // ==================== TAG-BASED QUERIES ====================
     @Query("""
@@ -73,16 +73,13 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
         ORDER BY c.sort_order ASC
     """)
 
-    Flux<ForumCategoryEntity> findCategoriesByTag(@Param("tagName") String tagName);
+    Flux<CategoryEntity> findCategoriesByTag(@Param("tagName") String tagName);
 
     // ==================== PAGINATED QUERIES ====================
 
     @Query("""
-        WITH distinct_categories AS (
-            SELECT DISTINCT c.* FROM forum_categories c
-            LEFT JOIN category_tags ct ON c.id = ct.category_id
-            WHERE (:tagName IS NULL OR ct.tag_name = :tagName)
-            AND (:parentCategoryId IS NULL OR c.parent_category_id = :parentCategoryId)
+        SELECT c.* FROM forum_categories c
+            WHERE (:parentCategoryId IS NULL OR c.parent_category_id = :parentCategoryId)
             AND (:isParent IS NULL OR
                     (:isParent = true AND c.parent_category_id IS NULL) OR
                     (:isParent = false AND c.parent_category_id IS NOT NULL))
@@ -91,17 +88,33 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
                     LOWER(c.slug) LIKE '%' || LOWER(:search) || '%' OR
                     LOWER(c.description) LIKE '%' || LOWER(:search) || '%')
             AND (:isActive IS NULL OR c.is_active = :isActive)
+    
+            -- Tag filter using centralised tags
+            AND (:tagId IS NULL OR EXISTS (
+                SELECT 1 FROM category_tag_assignments a
+                WHERE a.category_id = c.id AND a.tag_id = :tagId
+            ))
+    
+            -- Focused filter
+            AND (:isFocused IS NULL OR
+                (:isFocused = true AND EXISTS (
+                    SELECT 1 FROM focus_categories fc
+                    WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+                )) OR
+                (:isFocused = false AND NOT EXISTS (
+                    SELECT 1 FROM focus_categories fc
+                    WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+                ))
         )
     
-        SELECT * FROM distinct_categories dc
         ORDER BY
             CASE :sortDirection
                 WHEN 'DESC' THEN
                     CASE :sortBy
-                        WHEN 'sort_order' THEN LPAD(dc.sort_order::text, 10, '0')
-                        WHEN 'name' THEN dc.name
-                        WHEN 'created_at' THEN dc.created_at::text
-                        ELSE LPAD(dc.sort_order::text, 10, '0')
+                        WHEN 'sort_order' THEN LPAD(c.sort_order::text, 10, '0')
+                        WHEN 'name' THEN c.name
+                        WHEN 'created_at' THEN c.created_at::text
+                        ELSE LPAD(c.sort_order::text, 10, '0')
                     END
                 ELSE NULL
             END DESC NULLS LAST,
@@ -109,21 +122,23 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
             CASE :sortDirection
                 WHEN 'ASC' THEN
                     CASE :sortBy
-                        WHEN 'sort_order' THEN LPAD(dc.sort_order::text, 10, '0')
-                        WHEN 'name' THEN dc.name
-                        WHEN 'created_at' THEN dc.created_at::text
-                        ELSE LPAD(dc.sort_order::text, 10, '0')
+                        WHEN 'sort_order' THEN LPAD(c.sort_order::text, 10, '0')
+                        WHEN 'name' THEN c.name
+                        WHEN 'created_at' THEN c.created_at::text
+                        ELSE LPAD(c.sort_order::text, 10, '0')
                     END
                 ELSE NULL
             END ASC NULLS FIRST
         LIMIT :limit OFFSET :offset
     """)
-    Flux<ForumCategoryEntity> findAllCategoriesPaginated(
-            @Param("tagName") String tagName,
+    Flux<CategoryEntity> findAllCategoriesPaginated(
+            @Param("currentUserId") UUID currentUserId,
+            @Param("tagId") UUID tagId,
             @Param("parentCategoryId") UUID parentCategoryId,
             @Param("isParent") Boolean isParent,
-            @Param("search") String search,
             @Param("isActive") Boolean isActive,
+            @Param("isFocused") Boolean isFocused,
+            @Param("search") String search,
             @Param("sortBy") String sortBy,
             @Param("sortDirection") String sortDirection,
             @Param("limit") int limit,
@@ -131,10 +146,8 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
     );
 
     @Query("""
-        SELECT COUNT(DISTINCT c.id) FROM forum_categories c
-        LEFT JOIN category_tags ct ON c.id = ct.category_id
-        WHERE (:tagName IS NULL OR ct.tag_name = :tagName)
-        AND (:parentCategoryId IS NULL OR c.parent_category_id = :parentCategoryId)
+        SELECT COUNT(*) FROM forum_categories c
+        WHERE (:parentCategoryId IS NULL OR c.parent_category_id = :parentCategoryId)
         AND (:isParent IS NULL OR
                 (:isParent = true AND c.parent_category_id IS NULL) OR
                 (:isParent = false AND c.parent_category_id IS NOT NULL))
@@ -143,13 +156,34 @@ public interface ForumCategoryRepository extends R2dbcRepository<ForumCategoryEn
                 LOWER(c.slug) LIKE '%' || LOWER(:search) || '%' OR
                 LOWER(c.description) LIKE '%' || LOWER(:search) || '%')
         AND (:isActive IS NULL OR c.is_active = :isActive)
+    
+        -- Tag filter using centralised tags
+        AND (:tagId IS NULL OR EXISTS (
+            SELECT 1 FROM category_tag_assignments a
+            WHERE a.category_id = c.id AND a.tag_id = :tagId
+        ))
+    
+        -- Focused filter
+        AND (:isFocused IS NULL OR
+            (:isFocused = true AND EXISTS (
+                SELECT 1 FROM focus_categories fc
+                WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+            )) OR
+            (:isFocused = false AND NOT EXISTS (
+                SELECT 1 FROM focus_categories fc
+                WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+            ))
+            )
     """)
     Mono<Long> countAllCategoriesWithFilters(
-            @Param("tagName") String tagName,
+            @Param("currentUserId") UUID currentUserId,
+            @Param("tagId") UUID tagId,
             @Param("parentCategoryId") UUID parentCategoryId,
             @Param("isParent") Boolean isParent,
-            @Param("search") String search,
-            @Param("isActive") Boolean isActive
+            @Param("isActive") Boolean isActive,
+            @Param("isFocused") Boolean isFocused,
+            @Param("search") String search
+
     );
 
 }

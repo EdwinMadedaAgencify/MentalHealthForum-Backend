@@ -30,7 +30,7 @@ public class UserModerationServiceImpl implements UserModerationService {
 
     private final TransactionalOperator transactionalOperator;
     private final AppUserRepository appUserRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final ThreadRepository threadRepository;
     private final PostRepository postRepository;
     private final ContentReportRepository contentReportRepository;
     private final UserWarningRepository userWarningRepository;
@@ -39,14 +39,14 @@ public class UserModerationServiceImpl implements UserModerationService {
     public UserModerationServiceImpl(
             TransactionalOperator transactionalOperator,
             AppUserRepository appUserRepository,
-            ForumThreadRepository forumThreadRepository,
+            ThreadRepository threadRepository,
             PostRepository postRepository,
             ContentReportRepository contentReportRepository,
             UserWarningRepository userWarningRepository,
             UserRestrictionRepository userRestrictionRepository) {
         this.transactionalOperator = transactionalOperator;
         this.appUserRepository = appUserRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.threadRepository = threadRepository;
         this.postRepository = postRepository;
         this.contentReportRepository = contentReportRepository;
         this.userWarningRepository = userWarningRepository;
@@ -434,7 +434,7 @@ public class UserModerationServiceImpl implements UserModerationService {
 
     private Mono<Boolean> validateRelatedThread(UUID threadId){
         if(threadId != null){
-            return forumThreadRepository.existsById(threadId)
+            return threadRepository.existsById(threadId)
                     .flatMap(exists -> {
                         if(!exists){
                             return Mono.error(new ApiException(

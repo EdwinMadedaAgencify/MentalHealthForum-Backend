@@ -12,7 +12,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.WatchThreadEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadBookmarkRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.WatchThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
@@ -33,19 +33,19 @@ public class WatchThreadServiceImpl implements WatchThreadService {
 
     private final TransactionalOperator transactionalOperator;
     private final WatchThreadRepository watchThreadRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final ThreadRepository threadRepository;
     private final ThreadBookmarkRepository threadBookmarkRepository;
     private final AppUserService appUserService;
 
     public WatchThreadServiceImpl(
             TransactionalOperator transactionalOperator,
             WatchThreadRepository watchThreadRepository,
-            ForumThreadRepository forumThreadRepository,
+            ThreadRepository threadRepository,
             ThreadBookmarkRepository threadBookmarkRepository,
             AppUserService appUserService) {
         this.transactionalOperator = transactionalOperator;
         this.watchThreadRepository = watchThreadRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.threadRepository = threadRepository;
         this.threadBookmarkRepository = threadBookmarkRepository;
         this.appUserService = appUserService;
     }
@@ -136,7 +136,7 @@ public class WatchThreadServiceImpl implements WatchThreadService {
     // ==================== PRIVATE HELPERS ====================
 
     private Mono<Void> validateThreadExists(UUID threadId) {
-        return forumThreadRepository.existsById(threadId)
+        return threadRepository.existsById(threadId)
                 .flatMap(exists -> {
                     if(!exists){
                         return Mono.error(new ApiException("Thread not found", ErrorCode.VALIDATION_FAILED));

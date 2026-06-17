@@ -18,7 +18,7 @@ public interface PostService {
 // Example: ABUSE("Abuse", "Discusses abusive behavior or harassment")
 // Frontend can display description on hover
 
-// TODO: Consider renaming permanentlyDeletePost to purgePost for consistency with ForumCategoryService
+// TODO: Consider renaming permanentlyDeletePost to purgePost for consistency with CategoryService
 // Also consider adding pre-deletion validation (check for dependencies like replies)
 
     // TODO: Add support for custom text definitions - if user doesn't provide custom text,

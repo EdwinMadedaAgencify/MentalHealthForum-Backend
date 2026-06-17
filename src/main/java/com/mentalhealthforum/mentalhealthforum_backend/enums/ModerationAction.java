@@ -59,11 +59,16 @@ public enum ModerationAction {
     CATEGORY_ACCESS_CHANGED("Change category access", GroupPath.ADMINISTRATORS),
     CATEGORY_PURGE_OLD("Purge old inactive categories", GroupPath.ADMINISTRATORS),
 
-    // Tag actions
-    CATEGORY_TAG_ADDED("Add tag to category", GroupPath.ADMINISTRATORS),
-    CATEGORY_TAG_REMOVED("Remove tag from category", GroupPath.ADMINISTRATORS),
-    CATEGORY_TAG_UPDATED("Update tag description", GroupPath.ADMINISTRATORS),
-    CATEGORY_TAG_REPLACED("Replace all tags", GroupPath.ADMINISTRATORS),
+    // Tag management actions
+    CATEGORY_TAG_CREATED("Create tag", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_UPDATED("Update tag", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_DELETED("Delete tag", GroupPath.ADMINISTRATORS),
+
+
+    // Tag assignment actions
+    CATEGORY_TAG_ASSIGNED("Assign tag to category", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_UNASSIGNED("Remove tag from category", GroupPath.ADMINISTRATORS),
+    CATEGORY_TAG_REPLACED("Replace all category tags", GroupPath.ADMINISTRATORS),
 
 
     // User actions

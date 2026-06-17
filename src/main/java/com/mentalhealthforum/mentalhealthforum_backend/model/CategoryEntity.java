@@ -25,7 +25,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Table("forum_categories")
-public class ForumCategoryEntity {
+public class CategoryEntity {
     @Id
     @Column("id")
     private UUID id;  // Let database generate via gen_random_uuid()

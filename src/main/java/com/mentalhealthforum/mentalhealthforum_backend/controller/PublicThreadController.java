@@ -10,9 +10,8 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadStatusDefinitionEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadTypeDefinitionEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.service.ForumThreadService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.ThreadService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
-import com.mentalhealthforum.mentalhealthforum_backend.service.impl.ForumThreadServiceImpl;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -33,13 +32,13 @@ public class PublicThreadController {
 
     private static final Logger log = LoggerFactory.getLogger(PublicThreadController.class);
 
-    private final ForumThreadService forumThreadService;
+    private final ThreadService threadService;
     private final JwtClaimsExtractor jwtClaimsExtractor;
 
     public PublicThreadController(
-            ForumThreadService forumThreadService,
+            ThreadService threadService,
             JwtClaimsExtractor jwtClaimsExtractor) {
-        this.forumThreadService = forumThreadService;
+        this.threadService = threadService;
         this.jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
@@ -52,7 +51,7 @@ public class PublicThreadController {
             ){
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.createThread(request, viewerContext)
+        return threadService.createThread(request, viewerContext)
                 .map(thread -> ResponseEntity.status(HttpStatus.CREATED)
                         .body(new StandardSuccessResponse<>("Thread created Successfully", thread)));
     }
@@ -63,7 +62,7 @@ public class PublicThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.getThread(threadId, viewerContext)
+        return threadService.getThread(threadId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread retrieved Successfully",thread)));
     }
 
@@ -76,7 +75,7 @@ public class PublicThreadController {
             @Valid @RequestBody UpdateOwnThreadRequest updateOwnThreadRequest
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.updateOwnThread(threadId, updateOwnThreadRequest, viewerContext)
+        return threadService.updateOwnThread(threadId, updateOwnThreadRequest, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread updated Successfully",thread)));
     }
 
@@ -86,7 +85,7 @@ public class PublicThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.softDeleteOwnThread(threadId, viewerContext)
+        return threadService.softDeleteOwnThread(threadId, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Thread soft deleted Successfully"))));
     }
 
@@ -97,7 +96,7 @@ public class PublicThreadController {
             @PathVariable UUID postId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.setBestAnswerAsOriginalPoster(threadId, postId, viewerContext)
+        return threadService.setBestAnswerAsOriginalPoster(threadId, postId, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Best answer set Successfully"))));
     }
 
@@ -126,7 +125,7 @@ public class PublicThreadController {
 
         log.info("isWatched={}", isWatched);
 
-        return forumThreadService.getAllThreads(page, size, categoryId, creatorId, threadType, threadStatus, isDeleted, isFeatured, hasContentWarning, isBookmarked, isWatched, search, sortBy, sortDirection, viewerContext)
+        return threadService.getAllThreads(page, size, categoryId, creatorId, threadType, threadStatus, isDeleted, isFeatured, hasContentWarning, isBookmarked, isWatched, search, sortBy, sortDirection, viewerContext)
                 .map(paginatedThreads -> {
                     String message = "Paginated thread records retrieved successfully.";
                     StandardSuccessResponse<PaginatedResponse<ThreadResponse>> response = new StandardSuccessResponse<>(message, paginatedThreads);
@@ -139,7 +138,7 @@ public class PublicThreadController {
     @GetMapping("/thread_types")
     public Mono<ResponseEntity<StandardSuccessResponse<List<ThreadTypeDefinitionEntity>>>> getThreadTypes(
     ){
-        return forumThreadService.getThreadTypes()
+        return threadService.getThreadTypes()
                 .collectList()
                 .map(threadTypes -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread types retrieved Successfully", threadTypes)));
     }
@@ -147,7 +146,7 @@ public class PublicThreadController {
     @GetMapping("/thread_statuses")
     public Mono<ResponseEntity<StandardSuccessResponse<List<ThreadStatusDefinitionEntity>>>> getThreadStatuses(
     ){
-        return forumThreadService.getThreadStatuses()
+        return threadService.getThreadStatuses()
                 .collectList()
                 .map(threadStatuses -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread statuses retrieved Successfully", threadStatuses)));
     }

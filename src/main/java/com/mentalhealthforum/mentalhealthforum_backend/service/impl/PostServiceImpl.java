@@ -6,12 +6,11 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAnd
 import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
-import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumThreadEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.PostEditHistoryEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.PostEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.PostEditHistoryRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.PostRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AnonymousNameGenerator;
@@ -38,7 +37,7 @@ public class PostServiceImpl implements PostService {
 
     private final TransactionalOperator transactionalOperator;
     private final PostRepository postRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final ThreadRepository threadRepository;
     private final AppUserRepository appUserRepository;
     private final PostEditHistoryRepository postEditHistoryRepository;
     private final AnonymousNameGenerator anonymousNameGenerator;
@@ -47,14 +46,14 @@ public class PostServiceImpl implements PostService {
     public PostServiceImpl(
             TransactionalOperator transactionalOperator,
             PostRepository postRepository,
-            ForumThreadRepository forumThreadRepository,
+            ThreadRepository threadRepository,
             AppUserRepository appUserRepository,
             PostEditHistoryRepository postEditHistoryRepository,
             AnonymousNameGenerator anonymousNameGenerator,
             UserModerationService userModerationService) {
         this.transactionalOperator = transactionalOperator;
         this.postRepository = postRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.threadRepository = threadRepository;
         this.appUserRepository = appUserRepository;
         this.postEditHistoryRepository = postEditHistoryRepository;
         this.anonymousNameGenerator = anonymousNameGenerator;
@@ -272,12 +271,12 @@ public class PostServiceImpl implements PostService {
                 });
     }
 
-    private Mono<ForumThreadEntity> findThread(UUID threadId) {
-        return forumThreadRepository.findById(threadId)
+    private Mono<ThreadEntity> findThread(UUID threadId) {
+        return threadRepository.findById(threadId)
                 .switchIfEmpty(Mono.error(new ApiException("Thread not found", ErrorCode.RESOURCE_NOT_FOUND)));
     }
 
-    private Mono<ForumThreadEntity> findActiveThread(UUID threadId) {
+    private Mono<ThreadEntity> findActiveThread(UUID threadId) {
         return findThread(threadId)
                 .flatMap(thread -> {
                     if (thread.getIsDeleted()) {
@@ -290,7 +289,7 @@ public class PostServiceImpl implements PostService {
                 });
     }
 
-    private Mono<ForumThreadEntity> validateParentPost(ForumThreadEntity thread, UUID parentPostId) {
+    private Mono<ThreadEntity> validateParentPost(ThreadEntity thread, UUID parentPostId) {
         if (parentPostId == null) {
             return Mono.just(thread);
         }

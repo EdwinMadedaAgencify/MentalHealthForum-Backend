@@ -10,7 +10,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPa
 import com.mentalhealthforum.mentalhealthforum_backend.model.*;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.*;
 import com.mentalhealthforum.mentalhealthforum_backend.service.BookmarkService;
-import com.mentalhealthforum.mentalhealthforum_backend.service.ForumThreadService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.ThreadService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserModerationService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.WatchThreadService;
 import com.mentalhealthforum.mentalhealthforum_backend.utils.NormalizeUtils;
@@ -31,14 +31,14 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 @Service
-public class ForumThreadServiceImpl implements ForumThreadService {
+public class ThreadServiceImpl implements ThreadService {
 
-    private static final Logger log = LoggerFactory.getLogger(ForumThreadServiceImpl.class);
+    private static final Logger log = LoggerFactory.getLogger(ThreadServiceImpl.class);
 
     private final TransactionalOperator transactionalOperator;
     private final AppUserRepository appUserRepository;
-    private final ForumCategoryRepository forumCategoryRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final CategoryRepository categoryRepository;
+    private final ThreadRepository threadRepository;
     private final ThreadEditHistoryRepository threadEditHistoryRepository;
     private final PostRepository postRepository;
     private final ThreadTypeDefinitionRepository threadTypeDefinitionRepository;
@@ -48,11 +48,11 @@ public class ForumThreadServiceImpl implements ForumThreadService {
     private final WatchThreadService watchThreadService;
 
 
-    public ForumThreadServiceImpl(
+    public ThreadServiceImpl(
             TransactionalOperator transactionalOperator,
             AppUserRepository appUserRepository,
-            ForumCategoryRepository forumCategoryRepository,
-            ForumThreadRepository forumThreadRepository,
+            CategoryRepository categoryRepository,
+            ThreadRepository threadRepository,
             ThreadEditHistoryRepository threadEditHistoryRepository,
             PostRepository postRepository,
             ThreadTypeDefinitionRepository threadTypeDefinitionRepository,
@@ -62,8 +62,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
             WatchThreadService watchThreadService) {
         this.transactionalOperator = transactionalOperator;
         this.appUserRepository = appUserRepository;
-        this.forumCategoryRepository = forumCategoryRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.categoryRepository = categoryRepository;
+        this.threadRepository = threadRepository;
         this.threadEditHistoryRepository = threadEditHistoryRepository;
         this.postRepository = postRepository;
         this.threadTypeDefinitionRepository = threadTypeDefinitionRepository;
@@ -98,7 +98,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
     public Mono<ThreadResponse> getThread(UUID threadId, ViewerContext viewerContext){
         return findThread(threadId)
                 .flatMap(thread -> {
-                    return forumThreadRepository.incrementViewCount(threadId)
+                    return threadRepository.incrementViewCount(threadId)
                             .then(mapToResponse(thread, viewerContext));
                 });
     }
@@ -148,7 +148,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         String normalizedSortBy = validateAndNormalizeSortBy(sortBy);
         String normalizedSortDirection = determineSortDirection(sortDirection, normalizedSortBy);
 
-        Flux<ForumThreadEntity> theadsFlux = forumThreadRepository.findAllPaginated(
+        Flux<ThreadEntity> theadsFlux = threadRepository.findAllPaginated(
                 categoryId,
                 creatorId,
                 effectiveThreadType,
@@ -158,7 +158,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 effectiveSearch,
                 normalizedSortBy, normalizedSortDirection, size, offset);
 
-        Mono<Long> totalCount = forumThreadRepository.countAllPaginated(
+        Mono<Long> totalCount = threadRepository.countAllPaginated(
                 categoryId,
                 creatorId,
                 effectiveThreadType,
@@ -171,7 +171,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 theadsFlux.collectList(),
                 totalCount
         ).flatMap(tuple -> {
-            List<ForumThreadEntity> threads = tuple.getT1();
+            List<ThreadEntity> threads = tuple.getT1();
             long total = tuple.getT2();
 
             if(threads.isEmpty()){
@@ -233,7 +233,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                     if(updated){
                         thread.setUpdatedAt(Instant.now());
                         return threadEditHistoryRepository.save(history)
-                                        .then(forumThreadRepository.save(thread))
+                                        .then(threadRepository.save(thread))
                                 .flatMap(t -> mapToResponse(thread, viewerContext));
                     }
                     return Mono.just(thread).flatMap(t -> mapToResponse(thread, viewerContext));
@@ -250,7 +250,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 viewerContext,
                 "soft delete thread",
                 thread -> {
-                    return  forumThreadRepository.softDeleteThread(threadId);
+                    return  threadRepository.softDeleteThread(threadId);
                 },
                 null,
                 null
@@ -264,7 +264,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 viewerContext,
                 "set best answer",
                 thread -> {
-                    return forumThreadRepository.setBestAnswer(postId, threadId, UUID.fromString(viewerContext.getUserId()));
+                    return threadRepository.setBestAnswer(postId, threadId, UUID.fromString(viewerContext.getUserId()));
                 },
                 thread -> thread.getThreadType() == ThreadType.QUESTION,
                 "Only QUESTION threads can have a best answer"
@@ -279,8 +279,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         return ModerationAction.THREAD_ARCHIVED.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return forumThreadRepository.updateThreadStatus(threadId, ThreadStatus.ARCHIVED.name())
-                                    .then(forumThreadRepository.clearLockMetadata(threadId))
+                            return threadRepository.updateThreadStatus(threadId, ThreadStatus.ARCHIVED.name())
+                                    .then(threadRepository.clearLockMetadata(threadId))
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -301,8 +301,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         return ModerationAction.THREAD_UNARCHIVED.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return forumThreadRepository.updateThreadStatus(threadId, ThreadStatus.OPEN.name())
-                                    .then(forumThreadRepository.clearLockMetadata(threadId))
+                            return threadRepository.updateThreadStatus(threadId, ThreadStatus.OPEN.name())
+                                    .then(threadRepository.clearLockMetadata(threadId))
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -327,9 +327,9 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                                     ? Instant.now().plus(request.durationHours(), ChronoUnit.HOURS)
                                     : null;
 
-                            return forumThreadRepository.updateThreadStatus(threadId, ThreadStatus.CLOSED.name())
-                                    .then(forumThreadRepository.updateLockReason(threadId, request.reason(), moderatorId))
-                                    .then(forumThreadRepository.updateLockExpiry(threadId, lockExpiry))
+                            return threadRepository.updateThreadStatus(threadId, ThreadStatus.CLOSED.name())
+                                    .then(threadRepository.updateLockReason(threadId, request.reason(), moderatorId))
+                                    .then(threadRepository.updateLockExpiry(threadId, lockExpiry))
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
 
@@ -350,8 +350,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         return ModerationAction.THREAD_UNLOCKED.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return forumThreadRepository.updateThreadStatus(threadId, ThreadStatus.OPEN.name())
-                                    .then(forumThreadRepository.clearLockMetadata(threadId))
+                            return threadRepository.updateThreadStatus(threadId, ThreadStatus.OPEN.name())
+                                    .then(threadRepository.clearLockMetadata(threadId))
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -392,7 +392,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
 
                             thread.setThreadType(newThreadType);
                             thread.setUpdatedAt(Instant.now());
-                            return forumThreadRepository.save(thread).flatMap(t -> mapToResponse(thread, viewerContext));
+                            return threadRepository.save(thread).flatMap(t -> mapToResponse(thread, viewerContext));
                         },
                         List.of(
                                 new ValidationRule(
@@ -410,7 +410,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         return ModerationAction.THREAD_STICKY_TOGGLED.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return forumThreadRepository.updateStickyStatus(threadId, sticky)
+                            return threadRepository.updateStickyStatus(threadId, sticky)
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -432,7 +432,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         return moderationAction.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return forumThreadRepository.updateFeaturedStatus(threadId, featured)
+                            return threadRepository.updateFeaturedStatus(threadId, featured)
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -453,7 +453,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .then(validateCategoryExists(newCategoryId))
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return forumThreadRepository.moveThread(threadId, newCategoryId)
+                            return threadRepository.moveThread(threadId, newCategoryId)
                                             .then(findThread(threadId))
                                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -473,11 +473,11 @@ public class ForumThreadServiceImpl implements ForumThreadService {
         return ModerationAction.THREAD_SOFT_DELETED.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
                         thread -> {
-                            return  forumThreadRepository.softDeleteThread(threadId);
+                            return  threadRepository.softDeleteThread(threadId);
                         },
                         List.of(
                             new ValidationRule(
-                                    ForumThreadEntity::getIsDeleted,
+                                    ThreadEntity::getIsDeleted,
                                     "Thread is already deleted",
                                     ErrorCode.VALIDATION_FAILED
                             )
@@ -490,7 +490,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
     public Mono<Void> restoreThread(UUID threadId, ViewerContext viewerContext) {
         return ModerationAction.THREAD_RESTORED.checkPermission(viewerContext)
                 .then(performModeratorAction(threadId,
-                        thread -> forumThreadRepository.restoreThread(threadId),
+                        thread -> threadRepository.restoreThread(threadId),
                         List.of(
                             new ValidationRule(
                                 thread -> !thread.getIsDeleted(),
@@ -509,7 +509,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .then(performModeratorAction(threadId,
                         thread -> {
                             // Though I think in future it might be best to get resolved at from somewhere else
-                            return forumThreadRepository.setBestAnswer(postId, threadId, moderatorId)
+                            return threadRepository.setBestAnswer(postId, threadId, moderatorId)
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -535,7 +535,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .then(performModeratorAction(
                         threadId,
                         thread -> {
-                            return forumThreadRepository.clearBestAnswer(threadId)
+                            return threadRepository.clearBestAnswer(threadId)
                                     .then(findThread(threadId))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
@@ -580,7 +580,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                             thread.setContentWarningCustomText(request.contentWarningCustomText());
                             thread.setUpdatedAt(Instant.now());
                             return threadEditHistoryRepository.save(history)
-                                    .then(forumThreadRepository.save(thread))
+                                    .then(threadRepository.save(thread))
                                     .flatMap(t -> mapToResponse(thread, viewerContext));
                         },
                         List.of(
@@ -606,15 +606,15 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .then(Mono.zip(findThread(sourceThreadId), findThread(destinationThreadId)))
                 .flatMap(tuple -> {
 
-                    ForumThreadEntity sourceThread = tuple.getT1();
-                    ForumThreadEntity destinationThread = tuple.getT2();
+                    ThreadEntity sourceThread = tuple.getT1();
+                    ThreadEntity destinationThread = tuple.getT2();
 
                     int sourcePostCount = sourceThread.getPostCount();
 
                     return postRepository.moveAllPostsToThread(sourceThreadId, destinationThreadId)
-                            .then(forumThreadRepository.incrementPostCount(destinationThreadId, sourcePostCount))
-                            .then(forumThreadRepository.updateLastActivity(destinationThreadId))
-                            .then(forumThreadRepository.softDeleteThread(sourceThreadId))
+                            .then(threadRepository.incrementPostCount(destinationThreadId, sourcePostCount))
+                            .then(threadRepository.updateLastActivity(destinationThreadId))
+                            .then(threadRepository.softDeleteThread(sourceThreadId))
                             .then(mapToResponse(destinationThread, viewerContext));
                 })
                 .as(transactionalOperator::transactional);
@@ -628,7 +628,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .then(performModeratorAction(sourceThreadId,
                         sourceThread -> {
                             // Create new thread
-                            ForumThreadEntity newThread = ForumThreadEntity.builder()
+                            ThreadEntity newThread = ThreadEntity.builder()
                                     .title(request.newThreadTitle())
                                     .creatorId(sourceThread.getCreatorId())
                                     .categoryId(sourceThread.getCategoryId())
@@ -638,12 +638,12 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                                     .lastActivityAt(Instant.now())
                                     .build();
 
-                            return forumThreadRepository.save(newThread)
+                            return threadRepository.save(newThread)
                                     .flatMap(savedThread ->
                                             // Move posts to new thread
                                             postRepository.movePostsToThread(request.postIds(), savedThread.getId())
-                                                    .then(forumThreadRepository.recalculatePostCount(savedThread.getId()))
-                                                    .then(forumThreadRepository.decrementPostCount(sourceThreadId, request.postIds().size()))
+                                                    .then(threadRepository.recalculatePostCount(savedThread.getId()))
+                                                    .then(threadRepository.decrementPostCount(sourceThreadId, request.postIds().size()))
                                                     .then(findThread(savedThread.getId()))
                                                     .flatMap(thread -> mapToResponse(thread, viewerContext))
                                     );
@@ -651,7 +651,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                         },
                         List.of(
                                 new ValidationRule(
-                                        ForumThreadEntity::getIsDeleted,
+                                        ThreadEntity::getIsDeleted,
                                         "Cannot split from a deleted thread",
                                         ErrorCode.VALIDATION_FAILED
                                 ),
@@ -673,7 +673,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .then(findThread(threadId))
                 .flatMap(thread -> {
                     return threadEditHistoryRepository.deleteByThreadId(thread.getId())
-                            .then(forumThreadRepository.delete(thread));
+                            .then(threadRepository.delete(thread));
                 })
                 .as(transactionalOperator::transactional);
     }
@@ -714,15 +714,15 @@ public class ForumThreadServiceImpl implements ForumThreadService {
 
 
 
-    private Mono<ForumThreadEntity> findThread(UUID threadId){
-        return forumThreadRepository.findById(threadId)
+    private Mono<ThreadEntity> findThread(UUID threadId){
+        return threadRepository.findById(threadId)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Thread not found",
                         ErrorCode.RESOURCE_NOT_FOUND
                 )));
     }
 
-    private Mono<ForumThreadEntity> findActiveThread(UUID threadId) {
+    private Mono<ThreadEntity> findActiveThread(UUID threadId) {
         return findThread(threadId)
                 .flatMap(thread -> {
                     if (thread.getIsDeleted()) {
@@ -733,7 +733,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
     }
 
     private Mono<Void> validateCategoryExists(UUID categoryId) {
-        return forumCategoryRepository.findById(categoryId)
+        return categoryRepository.findById(categoryId)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category with id '" + categoryId + "' not found",
                         ErrorCode.RESOURCE_NOT_FOUND)))
@@ -750,8 +750,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
 
     private Mono<Void> validateThreadsExist(UUID sourceThreadId, UUID destinationThreadId) {
         return Mono.zip(
-                forumThreadRepository.existsById(sourceThreadId),
-                forumThreadRepository.existsById(destinationThreadId)
+                threadRepository.existsById(sourceThreadId),
+                threadRepository.existsById(destinationThreadId)
         ).flatMap(tuple -> {
             if (!tuple.getT1()) {
                 return Mono.error(new ApiException("Source thread not found", ErrorCode.RESOURCE_NOT_FOUND));
@@ -772,8 +772,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
 
     private Mono<Void> validateThreadsNotDeleted(UUID sourceThreadId, UUID destinationThreadId) {
         return Mono.zip(
-                forumThreadRepository.existsByIdAndIsDeletedFalse(sourceThreadId),
-                forumThreadRepository.existsByIdAndIsDeletedFalse(destinationThreadId)
+                threadRepository.existsByIdAndIsDeletedFalse(sourceThreadId),
+                threadRepository.existsByIdAndIsDeletedFalse(destinationThreadId)
         ).flatMap(tuple -> {
 
             if (!tuple.getT1()) {
@@ -806,8 +806,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 });
     }
 
-    private Mono<ForumCategoryEntity> validateCategoryActive(UUID categoryId){
-        return  forumCategoryRepository.findById(categoryId)
+    private Mono<CategoryEntity> validateCategoryActive(UUID categoryId){
+        return  categoryRepository.findById(categoryId)
                 .switchIfEmpty(Mono.error(new ApiException(
                         "Category not found",
                         ErrorCode.RESOURCE_NOT_FOUND
@@ -824,9 +824,9 @@ public class ForumThreadServiceImpl implements ForumThreadService {
     }
 
 
-    private Mono<ForumThreadEntity> createAndSaveThread(CreateThreadRequest request, String userId, List<String> normalizedTags) {
+    private Mono<ThreadEntity> createAndSaveThread(CreateThreadRequest request, String userId, List<String> normalizedTags) {
         // 3. Create thread entity
-        ForumThreadEntity thread = ForumThreadEntity.builder()
+        ThreadEntity thread = ThreadEntity.builder()
                 .title(request.getTitle())
                 .creatorId(UUID.fromString(userId))
                 .categoryId(request.getCategoryId())
@@ -839,7 +839,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .lastActivityAt(Instant.now())
                 .build();
 
-        return forumThreadRepository.save(thread);
+        return threadRepository.save(thread);
     }
 
 
@@ -848,8 +848,8 @@ public class ForumThreadServiceImpl implements ForumThreadService {
             UUID threadId,
             ViewerContext viewerContext,
             String actionDescription,
-            Function<ForumThreadEntity, Mono<T>> action,
-            Predicate<ForumThreadEntity> validator,
+            Function<ThreadEntity, Mono<T>> action,
+            Predicate<ThreadEntity> validator,
             String validationErrorMessage
     ){
         return findThread(threadId)
@@ -878,20 +878,20 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 .as(transactionalOperator::transactional);
     }
 
-    private record ValidationRule(Predicate<ForumThreadEntity> condition, String errorMessage, ErrorCode errorCode){
-        public ValidationRule(Predicate<ForumThreadEntity> condition, String errorMessage){
+    private record ValidationRule(Predicate<ThreadEntity> condition, String errorMessage, ErrorCode errorCode){
+        public ValidationRule(Predicate<ThreadEntity> condition, String errorMessage){
             this(condition, errorMessage, ErrorCode.VALIDATION_FAILED);
         }
     }
 
     private <T> Mono<T> performModeratorAction(
             UUID threadId,
-            Function<ForumThreadEntity, Mono<T>> action,
+            Function<ThreadEntity, Mono<T>> action,
             List<ValidationRule> validators,
             boolean requireActive
     ){
         // No generic role check here - let each action's checkPermission handle it
-        Mono<ForumThreadEntity> threadMono = requireActive? findActiveThread(threadId) : findThread(threadId);
+        Mono<ThreadEntity> threadMono = requireActive? findActiveThread(threadId) : findThread(threadId);
 
         return threadMono
                 .flatMap(thread -> {
@@ -907,9 +907,9 @@ public class ForumThreadServiceImpl implements ForumThreadService {
     }
 
 
-    private Mono<ThreadResponse> mapToResponse(ForumThreadEntity thread, ViewerContext viewerContext) {
+    private Mono<ThreadResponse> mapToResponse(ThreadEntity thread, ViewerContext viewerContext) {
         return Mono.zip(
-                forumCategoryRepository.findById(thread.getCategoryId())
+                categoryRepository.findById(thread.getCategoryId())
                         .switchIfEmpty(Mono.empty()),
                 appUserRepository.findAppUserByKeycloakId(thread.getCreatorId().toString())
                         .switchIfEmpty(Mono.empty()),
@@ -917,7 +917,7 @@ public class ForumThreadServiceImpl implements ForumThreadService {
                 bookmarkService.getBookmarkCountForThread(thread.getId()),
                 watchThreadService.isWatchingThread(thread.getId(), viewerContext)
         ).map(tuple -> {
-            ForumCategoryEntity category = tuple.getT1();
+            CategoryEntity category = tuple.getT1();
             AppUserEntity creator = tuple.getT2();
             Boolean isBookmarked = tuple.getT3();
             Boolean  isWatched = tuple.getT5();

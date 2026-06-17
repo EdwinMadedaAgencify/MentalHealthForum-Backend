@@ -5,9 +5,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.SlugGenerationRespons
 import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.*;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryTagEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.service.ForumCategoryService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.CategoryService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
@@ -17,61 +15,60 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("api/admin/forum/categories")
-public class AdminForumCategoryController {
+public class AdminCategoryController {
 
-    private final ForumCategoryService forumCategoryService;
+    private final CategoryService categoryService;
     private final JwtClaimsExtractor jwtClaimsExtractor;
 
-    public AdminForumCategoryController(ForumCategoryService forumCategoryService, JwtClaimsExtractor jwtClaimsExtractor) {
-        this.forumCategoryService = forumCategoryService;
+    public AdminCategoryController(CategoryService categoryService, JwtClaimsExtractor jwtClaimsExtractor) {
+        this.categoryService = categoryService;
         this.jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
-    // ==================== UTILITY ENDPOINTS ====================
+    // ==================== SLUG GENERATION ====================
 
     @GetMapping("/generate-slug")
     public Mono<ResponseEntity<StandardSuccessResponse<SlugGenerationResponse>>> generateSlug(
             @RequestParam String name,
-            @RequestParam(required = false) UUID excludeCategoryId) {
-        return forumCategoryService.generateSlug(name, excludeCategoryId)
+            @RequestParam(required = false) UUID excludeTagId) {
+        return categoryService.generateCategorySlug(name, excludeTagId)
                 .map(response -> ResponseEntity.ok(new StandardSuccessResponse<>(
-                                response.available() ? "Slug available" : "Slug not available, suggested alternative",
-                                response
+                        response.available() ? "Slug available" : "Slug not available, suggested alternative",
+                        response
                 )));
     }
 
     // ==================== CATEGORY CRUD ====================
 
     @PostMapping
-    public Mono<ResponseEntity<StandardSuccessResponse<ForumCategoryResponse>>> createCategory(
+    public Mono<ResponseEntity<StandardSuccessResponse<CategoryResponse>>> createCategory(
             @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody CreateForumCategoryRequest request) {
+            @Valid @RequestBody CreateCategoryRequest request) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.createCategory(request, viewerContext)
+        return categoryService.createCategory(request, viewerContext)
                 .map(category -> ResponseEntity.ok(new StandardSuccessResponse<>("Category created successfully", category)));
     }
 
     @GetMapping("/all")
-    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<ForumCategoryResponse>>>> getAllCategories(
+    public Mono<ResponseEntity<StandardSuccessResponse<PaginatedResponse<CategoryResponse>>>> getAllCategories(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false, name = "tag_name") @Parameter(description = "Filter by tag name") String tagName,
+            @RequestParam(required = false, name = "tag_id") @Parameter(description = "Filter by tag id") UUID tagId,
             @RequestParam(required = false, name = "parent_category_id") @Parameter(description = "Filter by parent category id") UUID parentCategoryId,
             @RequestParam(required = false, name = "is_parent") @Parameter(description = "Filter by is parent") Boolean isParent,
+            @RequestParam(required = false, name = "is_active") @Parameter(description = "Filter by active") Boolean isActive,
             @RequestParam(defaultValue = "", name = "search") @Parameter(description = "Search by name, slug, or description") String search,
-            @RequestParam(defaultValue = "", name = "is_active") @Parameter(description = "Filter by active") Boolean isActive,
             @RequestParam(defaultValue = "sort_order", name = "sort_by") @Parameter(description = "Sort by: sort_order, name, created_at") String sortBy,
             @RequestParam(required = false, name = "sort_direction") @Parameter(description = "Sort direction: asc or desc") String sortDirection
     ) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.getAllCategories(page, size, tagName, parentCategoryId, isParent, search, isActive, sortBy, sortDirection, viewerContext)
+        return categoryService.getAllCategories(page, size, tagId, parentCategoryId, isParent, isActive, search, sortBy, sortDirection, viewerContext)
                 .map(response -> ResponseEntity.ok(new StandardSuccessResponse<>(
                         "Categories retrieved successfully", response)));
     }
@@ -82,49 +79,49 @@ public class AdminForumCategoryController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.getInactiveCount(viewerContext)
+        return categoryService.getInactiveCount(viewerContext)
                 .map(count -> ResponseEntity.ok(new StandardSuccessResponse<>(
                                 "Inactive categories count retrieved",
                                 Map.of("inactiveCount", count)
                 )));
     }
 
-    @PutMapping("/{id}")
-    public Mono<ResponseEntity<StandardSuccessResponse<ForumCategoryResponse>>> updateCategory(
+    @PutMapping("/{categoryId}")
+    public Mono<ResponseEntity<StandardSuccessResponse<CategoryResponse>>> updateCategory(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateForumCategoryRequest request) {
+            @PathVariable UUID categoryId,
+            @Valid @RequestBody UpdateCategoryRequest request) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.updateCategory(id, request, viewerContext)
+        return categoryService.updateCategory(categoryId, request, viewerContext)
                 .map(category -> ResponseEntity.ok(
                         new StandardSuccessResponse<>("Category updated successfully", category)));
     }
 
-    @PutMapping("/{id}/reactivate")
-    public Mono<ResponseEntity<StandardSuccessResponse<ForumCategoryResponse>>> reactivateCategory(
+    @PutMapping("/{categoryId}/reactivate")
+    public Mono<ResponseEntity<StandardSuccessResponse<CategoryResponse>>> reactivateCategory(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID id) {
+            @PathVariable UUID categoryId) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.reactivateCategory(id, viewerContext)
+        return categoryService.reactivateCategory(categoryId, viewerContext)
                 .map(category -> ResponseEntity.ok(
                         new StandardSuccessResponse<>("Category reactivated successfully", category)));
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{categoryId}")
     public Mono<ResponseEntity<StandardSuccessResponse<Void>>> softDeleteCategory(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID id) {
+            @PathVariable UUID categoryId) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.softDeleteCategory(id, viewerContext)
+        return categoryService.softDeleteCategory(categoryId, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Category soft deleted successfully"))));
     }
 
-    @DeleteMapping("/{id}/purge")
+    @DeleteMapping("/{categoryId}/purge")
     public Mono<ResponseEntity<StandardSuccessResponse<Void>>> purgeCategory(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID id) {
+            @PathVariable UUID categoryId) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.purgeCategory(id, viewerContext)
+        return categoryService.purgeCategory(categoryId, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Category permanently purged successfully"))));
     }
 
@@ -133,51 +130,9 @@ public class AdminForumCategoryController {
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "90") int daysOld) {
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.purgeOldInactiveCategories(daysOld, viewerContext)
+        return categoryService.purgeOldInactiveCategories(daysOld, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>(
                         String.format("Categories inactive for more than %d days purged", daysOld)))));
     }
 
-    // ==================== TAG OPERATIONS ====================
-
-    @PostMapping("/{categoryId}/tags")
-    public Mono<ResponseEntity<StandardSuccessResponse<ForumCategoryTagResponse>>> addTag(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID categoryId,
-            @Valid @RequestBody ForumCategoryTagRequest request) {
-        ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.addTag(categoryId, request, viewerContext)
-                .map(tag -> ResponseEntity.ok(new StandardSuccessResponse<>("Tag added successfully", tag)));
-    }
-
-    @PutMapping("/{categoryId}/tags/{tagName}")
-    public Mono<ResponseEntity<StandardSuccessResponse<ForumCategoryTagResponse>>> updateTagDescription(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID categoryId,
-            @PathVariable String tagName,
-            @RequestParam String description) {
-        ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.updateTagDescription(categoryId, tagName, description, viewerContext)
-                .map(tag -> ResponseEntity.ok(new StandardSuccessResponse<>("Tag description updated successfully", tag)));
-    }
-
-    @DeleteMapping("/{categoryId}/tags/{tagName}")
-    public Mono<ResponseEntity<StandardSuccessResponse<Void>>> removeTag(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID categoryId,
-            @PathVariable String tagName) {
-        ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.removeTag(categoryId, tagName, viewerContext)
-                .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Tag removed successfully"))));
-    }
-
-    @PutMapping("/{categoryId}/tags/replace")
-    public Mono<ResponseEntity<StandardSuccessResponse<Void>>> replaceTags(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID categoryId,
-            @RequestBody List<ForumCategoryTagRequest> tags) {
-        ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumCategoryService.replaceTags(categoryId, tags, viewerContext)
-                .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Tags replaced successfully"))));
-    }
 }

@@ -25,7 +25,7 @@ import java.util.UUID;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Table("forum_threads")
-public class ForumThreadEntity {
+public class ThreadEntity {
 
     @Id
     @Column("id")

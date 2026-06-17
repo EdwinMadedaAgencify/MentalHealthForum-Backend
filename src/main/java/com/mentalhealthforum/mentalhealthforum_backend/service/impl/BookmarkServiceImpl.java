@@ -11,7 +11,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadBookmarkEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadBookmarkRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.BookmarkService;
@@ -27,17 +27,17 @@ public class BookmarkServiceImpl implements BookmarkService {
 
     private final TransactionalOperator transactionalOperator;
     private final ThreadBookmarkRepository bookmarkRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final ThreadRepository threadRepository;
     private final AppUserService appUserService;
 
     public BookmarkServiceImpl(
             TransactionalOperator transactionalOperator,
             ThreadBookmarkRepository bookmarkRepository,
-            ForumThreadRepository forumThreadRepository,
+            ThreadRepository threadRepository,
             AppUserService appUserService) {
         this.transactionalOperator = transactionalOperator;
         this.bookmarkRepository = bookmarkRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.threadRepository = threadRepository;
         this.appUserService = appUserService;
     }
 
@@ -131,7 +131,7 @@ public class BookmarkServiceImpl implements BookmarkService {
     // ==================== PRIVATE HELPERS ====================
 
     private Mono<Void> validateThreadExists(UUID threadId) {
-        return forumThreadRepository.findByIdAndIsDeletedFalse(threadId)
+        return threadRepository.findByIdAndIsDeletedFalse(threadId)
                 .switchIfEmpty(Mono.error(new ApiException("Thread not found", ErrorCode.RESOURCE_NOT_FOUND)))
                 .then();
     }

@@ -1,6 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumThreadEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.data.repository.query.Param;
@@ -12,12 +12,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Repository
-public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity, UUID> {
+public interface ThreadRepository extends R2dbcRepository<ThreadEntity, UUID> {
     // ==================== BASIC QUERIES ====================
 
-    Flux<ForumThreadEntity> findByCreatorIdOrderByCreatedAtDesc(UUID creatorId);
+    Flux<ThreadEntity> findByCreatorIdOrderByCreatedAtDesc(UUID creatorId);
 
-    Mono<ForumThreadEntity> findByIdAndIsDeletedFalse(UUID threadId);
+    Mono<ThreadEntity> findByIdAndIsDeletedFalse(UUID threadId);
 
     // ==================== REFERENCE TABLES ====================
     @Query("""
@@ -88,7 +88,7 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
             id
         LIMIT :limit OFFSET :offset
         """)
-    Flux<ForumThreadEntity> findAllPaginated(
+    Flux<ThreadEntity> findAllPaginated(
             @Param("categoryId") UUID categoryId,
             @Param("creatorId") UUID creatorId,
             @Param("threadType") String threadType,
@@ -167,7 +167,7 @@ public interface ForumThreadRepository extends R2dbcRepository<ForumThreadEntity
         ORDER BY is_sticky DESC, last_activity_at DESC
         LIMIT :limit OFFSET :offset
         """)
-    Flux<ForumThreadEntity> findActiveThreadsByCategoryPaginated(
+    Flux<ThreadEntity> findActiveThreadsByCategoryPaginated(
             @Param("categoryId") UUID categoryId,
             @Param("limit") int limit,
             @Param("offset") int offset

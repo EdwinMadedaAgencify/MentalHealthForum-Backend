@@ -1,14 +1,13 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged;
 
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ContentWarningType;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.validator.constraints.Length;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,8 +17,8 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UpdateForumCategoryRequest {
-
+public class CreateCategoryRequest {
+    @NotBlank(message = "Category name is required")
     @Length(min = 3, max = 100, message = "Name must be between 3 and 100 characters")
     private String name;
 
@@ -31,19 +30,21 @@ public class UpdateForumCategoryRequest {
     private String description;
 
     @Pattern(regexp = "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$", message = "Color must be a valid Hex color (e.g., #3B82F6 or #3BF)")
-    private String colorTheme;
+    @Builder.Default
+    private String colorTheme = "#3B82F6";
 
     private UUID parentCategoryId;
 
-    private ContentWarningType contentWarningType;
+    @Builder.Default
+    private ContentWarningType contentWarningType = ContentWarningType.NONE;
 
     private String contentWarningCustomText;
 
+    @Builder.Default
     @PositiveOrZero(message = "Sort order must be zero or positive")
-    private Integer sortOrder;
-
-    private Boolean isActive;
+    private Integer sortOrder = 0;
 
     @Builder.Default
-    private List<ForumCategoryTagRequest> tags = new ArrayList<>();
+    @Size(max = 3, message = "Maximum 3 tags per category")
+    private List<UUID> tagIds = new ArrayList<>(); // Just IDs, no embedded creation
 }

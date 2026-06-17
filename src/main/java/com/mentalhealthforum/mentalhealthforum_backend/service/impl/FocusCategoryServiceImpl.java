@@ -7,10 +7,10 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.FocusCategoryEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.model.ForumCategoryEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.FocusCategoryRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumCategoryRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ForumThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.FocusCategoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,18 +29,18 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
 
     private final TransactionalOperator transactionalOperator;
     private final FocusCategoryRepository focusCategoryRepository;
-    private final ForumCategoryRepository forumCategoryRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final CategoryRepository categoryRepository;
+    private final ThreadRepository threadRepository;
 
     public FocusCategoryServiceImpl(
             TransactionalOperator transactionalOperator,
             FocusCategoryRepository focusCategoryRepository,
-            ForumCategoryRepository forumCategoryRepository,
-            ForumThreadRepository forumThreadRepository) {
+            CategoryRepository categoryRepository,
+            ThreadRepository threadRepository) {
         this.transactionalOperator = transactionalOperator;
         this.focusCategoryRepository = focusCategoryRepository;
-        this.forumCategoryRepository = forumCategoryRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.categoryRepository = categoryRepository;
+        this.threadRepository = threadRepository;
     }
 
     @Override
@@ -116,7 +116,7 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
     // ==================== PRIVATE HELPERS ====================
 
     private Mono<Void> validateCategoryExists(UUID categoryId) {
-        return forumCategoryRepository.findById(categoryId)
+        return categoryRepository.findById(categoryId)
                 .switchIfEmpty(Mono.error(new ApiException("Category not found", ErrorCode.RESOURCE_NOT_FOUND)))
                 .then();
     }
@@ -143,10 +143,10 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
 
     private Mono<FocusCategoryResponse> mapToResponse(FocusCategoryEntity focusCategory){
         return Mono.zip(
-                forumCategoryRepository.findById(focusCategory.getCategoryId()),
-                forumThreadRepository.countActiveThreadsByCategory(focusCategory.getCategoryId())
+                categoryRepository.findById(focusCategory.getCategoryId()),
+                threadRepository.countActiveThreadsByCategory(focusCategory.getCategoryId())
         ).map(tuple-> {
-            ForumCategoryEntity category = tuple.getT1();
+            CategoryEntity category = tuple.getT1();
             Long threadCount = tuple.getT2();
 
             return FocusCategoryResponse.builder()

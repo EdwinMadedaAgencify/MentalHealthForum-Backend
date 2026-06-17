@@ -10,7 +10,7 @@ import java.util.UUID;
 
 @Data
 @Builder
-public class ForumCategoryResponse {
+public class CategoryResponse {
 
     private UUID id;
     private String name;
@@ -27,7 +27,8 @@ public class ForumCategoryResponse {
     // Computed fields
     private Boolean isParent;
     private Boolean isChild;
+    private  Boolean isFocused;
 
     // Tags (flattened)
-    private List<ForumCategoryTagResponse> tags;
+    private List<CategoryTagResponse> tags;
 }

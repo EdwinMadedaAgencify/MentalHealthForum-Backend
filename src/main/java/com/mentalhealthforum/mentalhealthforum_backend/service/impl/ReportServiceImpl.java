@@ -36,7 +36,7 @@ public class ReportServiceImpl implements ReportService {
     private final DismissalReasonTemplateRepository dismissalReasonTemplateRepository;
     private final UserReportHistoryRepository userReportHistoryRepository;
     private final PostRepository postRepository;
-    private final ForumThreadRepository forumThreadRepository;
+    private final ThreadRepository threadRepository;
     private final AppUserRepository appUserRepository;
 
     public ReportServiceImpl(
@@ -47,7 +47,7 @@ public class ReportServiceImpl implements ReportService {
             DismissalReasonTemplateRepository dismissalReasonTemplateRepository,
             UserReportHistoryRepository userReportHistoryRepository,
             PostRepository postRepository,
-            ForumThreadRepository forumThreadRepository,
+            ThreadRepository threadRepository,
             AppUserRepository appUserRepository) {
         this.transactionalOperator = transactionalOperator;
         this.contentReportRepository = contentReportRepository;
@@ -56,7 +56,7 @@ public class ReportServiceImpl implements ReportService {
         this.dismissalReasonTemplateRepository = dismissalReasonTemplateRepository;
         this.userReportHistoryRepository = userReportHistoryRepository;
         this.postRepository = postRepository;
-        this.forumThreadRepository = forumThreadRepository;
+        this.threadRepository = threadRepository;
         this.appUserRepository = appUserRepository;
     }
 
@@ -484,7 +484,7 @@ public class ReportServiceImpl implements ReportService {
                 if (request.getThreadId() == null) {
                     yield Mono.error(new ApiException("Thread Id is required for thread reports", ErrorCode.VALIDATION_FAILED));
                 }
-                yield forumThreadRepository.findByIdAndIsDeletedFalse(request.getThreadId())
+                yield threadRepository.findByIdAndIsDeletedFalse(request.getThreadId())
                         .switchIfEmpty(Mono.error(new ApiException("Thread not found", ErrorCode.RESOURCE_NOT_FOUND)))
                         .then();
             }

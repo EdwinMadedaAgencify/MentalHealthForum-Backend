@@ -13,7 +13,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.UUID;
 
-public interface ForumThreadService {
+public interface ThreadService {
     // ==================== USER ACTIONS ====================
 
     Mono<ThreadResponse> createThread(CreateThreadRequest request, ViewerContext viewerContext);

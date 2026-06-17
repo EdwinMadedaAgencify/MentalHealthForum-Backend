@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
@@ -19,26 +20,29 @@ import java.util.UUID;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Table("category_tags")
-public class ForumCategoryTagEntity {
+public class CategoryTagEntity {
     @Id
     @Column("id")
-    private UUID id;  // Let database generate via gen_random_uuid()
+    private UUID id;
 
-    @Column("category_id")
-    private UUID categoryId;
+    @Column("name")
+    private String name;
 
-    @Column("tag_name")
-    private String tagName;
+    @Column("slug")
+    private String slug;
 
-    @Column("tag_description")
-    private String tagDescription;
+    @Column("description")
+    private String description;
+
+    @Column("created_by")
+    private UUID createdBy;
 
     @CreatedDate
     @Column("created_at")
     private Instant createdAt;
 
-    public boolean isSameTag(ForumCategoryTagEntity other){
-        if (other == null) return false;
-        return this.categoryId.equals(other.categoryId) && this.tagName.equalsIgnoreCase(other.tagName);
-    }
+    @LastModifiedDate
+    @Column("updated_at")
+    private Instant updatedAt;
+
 }

@@ -4,7 +4,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.StandardSuccessRespon
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.AddContentWarningRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.threadLifecycleAndMetadata.*;
-import com.mentalhealthforum.mentalhealthforum_backend.service.ForumThreadService;
+import com.mentalhealthforum.mentalhealthforum_backend.service.ThreadService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtractor;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -13,20 +13,19 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("api/moderator/forum/threads")
 public class ModeratorThreadController {
 
-    private final ForumThreadService forumThreadService;
+    private final ThreadService threadService;
     private final JwtClaimsExtractor jwtClaimsExtractor;
 
     public ModeratorThreadController(
-            ForumThreadService forumThreadService,
+            ThreadService threadService,
             JwtClaimsExtractor jwtClaimsExtractor) {
-        this.forumThreadService = forumThreadService;
+        this.threadService = threadService;
         this.jwtClaimsExtractor = jwtClaimsExtractor;
     }
 
@@ -38,7 +37,7 @@ public class ModeratorThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.archiveThread(threadId, viewerContext)
+        return threadService.archiveThread(threadId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread archived successfully",thread)));
     }
 
@@ -48,7 +47,7 @@ public class ModeratorThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.unArchiveThread(threadId, viewerContext)
+        return threadService.unArchiveThread(threadId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread unarchived successfully",thread)));
     }
 
@@ -59,7 +58,7 @@ public class ModeratorThreadController {
             @Valid @RequestBody LockThreadRequest request
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.lockThread(threadId, request, viewerContext)
+        return threadService.lockThread(threadId, request, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread locked successfully",thread)));
     }
 
@@ -69,7 +68,7 @@ public class ModeratorThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.unlockThread(threadId, viewerContext)
+        return threadService.unlockThread(threadId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread unlocked successfully",thread)));
     }
 
@@ -80,7 +79,7 @@ public class ModeratorThreadController {
             @Valid @RequestBody UpdateThreadTypeRequest request
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.updateThreadType(threadId, request, viewerContext)
+        return threadService.updateThreadType(threadId, request, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread type updated successfully",thread)));
     }
 
@@ -91,7 +90,7 @@ public class ModeratorThreadController {
             @RequestParam boolean sticky
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.toggleSticky(threadId, sticky, viewerContext)
+        return threadService.toggleSticky(threadId, sticky, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>(sticky?
                         "Thread pinned successfully" :
                         "Thread unpinned successfully",thread)));
@@ -104,7 +103,7 @@ public class ModeratorThreadController {
             @RequestParam boolean featured
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.toggleFeatured(threadId, featured, viewerContext)
+        return threadService.toggleFeatured(threadId, featured, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>(featured?
                         "Thread featured successfully" :
                         "Thread un-featured successfully",thread)));
@@ -117,7 +116,7 @@ public class ModeratorThreadController {
             @RequestParam UUID categoryId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.moveThread(threadId, categoryId, viewerContext)
+        return threadService.moveThread(threadId, categoryId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread moved successfully",thread)));
     }
 
@@ -127,7 +126,7 @@ public class ModeratorThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.softDeleteThread(threadId, viewerContext)
+        return threadService.softDeleteThread(threadId, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Thread soft deleted successfully"))));
     }
 
@@ -137,7 +136,7 @@ public class ModeratorThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.restoreThread(threadId, viewerContext)
+        return threadService.restoreThread(threadId, viewerContext)
                 .then(Mono.just(ResponseEntity.ok(new StandardSuccessResponse<>("Thread restored successfully"))));
     }
 
@@ -149,7 +148,7 @@ public class ModeratorThreadController {
             @Valid @RequestBody AddContentWarningRequest request
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.addThreadContentWarning(threadId, request, viewerContext)
+        return threadService.addThreadContentWarning(threadId, request, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Content warning added successfully",thread)));
     }
 
@@ -162,7 +161,7 @@ public class ModeratorThreadController {
             @PathVariable UUID postId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.setBestAnswer(threadId, postId, viewerContext)
+        return threadService.setBestAnswer(threadId, postId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Best answer set successfully", thread)));
     }
 
@@ -172,7 +171,7 @@ public class ModeratorThreadController {
             @PathVariable UUID threadId
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.clearBestAnswer(threadId, viewerContext)
+        return threadService.clearBestAnswer(threadId, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Best answer cleared successfully", thread)));
     }
 
@@ -184,7 +183,7 @@ public class ModeratorThreadController {
             @Valid @RequestBody MergeThreadRequest request
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.mergeThreads(request, viewerContext)
+        return threadService.mergeThreads(request, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Threads merged successfully",thread)));
     }
 
@@ -195,7 +194,7 @@ public class ModeratorThreadController {
             @Valid @RequestBody SplitThreadRequest request
     ){
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return forumThreadService.splitThread(threadId, request, viewerContext)
+        return threadService.splitThread(threadId, request, viewerContext)
                 .map(thread -> ResponseEntity.ok(new StandardSuccessResponse<>("Thread split successfully",thread)));
     }
 
