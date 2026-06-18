@@ -14,6 +14,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.*;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.UserConnectRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.VerificationTokenRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AdminInvitationService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.UserResponseMapper;
@@ -62,6 +63,7 @@ public class AppUserServiceImpl implements AppUserService {
     private final KeycloakAdminManager adminManager;
     private final NovuServiceImpl novuServiceImpl;
     private final UserResponseMapper userResponseMapper;
+    private final UserConnectRepository userConnectRepository;
     private final AdminInvitationService adminInvitationService;
     private final AdminInvitationRepository adminInvitationRepository;
     private final VerificationTokenRepository verificationTokenRepository;
@@ -77,6 +79,7 @@ public class AppUserServiceImpl implements AppUserService {
             KeycloakAdminManager adminManager,
             NovuServiceImpl novuServiceImpl,
             UserResponseMapper userResponseMapper,
+            UserConnectRepository userConnectRepository,
             AdminInvitationService adminInvitationService,
             AdminInvitationRepository adminInvitationRepository,
             VerificationTokenRepository verificationTokenRepository) {
@@ -84,6 +87,7 @@ public class AppUserServiceImpl implements AppUserService {
         this.adminManager = adminManager;
         this.novuServiceImpl = novuServiceImpl;
         this.userResponseMapper = userResponseMapper;
+        this.userConnectRepository = userConnectRepository;
         this.adminInvitationService = adminInvitationService;
         this.adminInvitationRepository = adminInvitationRepository;
         this.verificationTokenRepository = verificationTokenRepository;
@@ -302,47 +306,42 @@ public class AppUserServiceImpl implements AppUserService {
      * Applies individual privacy rules per user based on their profile visibility
      * and the viewer's privileges.
      *
-     * @param viewerContext    Authenticated viewer context used to determine field visibility
-     * @param page             Zero-indexed page number to retrieve
-     * @param size             Number of users to return per page
      * @param currentUserFirst Whether to place the current user first on page 0
      * @param isActive         Optional filter restricting results by active/inactive status
+     * @param isConnected      Optional filter restricting results by user connections
      * @param role             Optional role filter; null means no role restriction
      * @param groups           Optional group filter; empty array is treated as no filter
+     * @param search           Optional search query; blank values ignored
      * @param sortBy           Field to sort by; falls back to a safe default when invalid
      * @param sortDirection    Sort direction ("asc" or "desc"); defaults by field when null
-     * @param search           Optional search query; blank values ignored
+     * @param page             Zero-indexed page number to retrieve
+     * @param size             Number of users to return per page
+     * @param viewerContext    Authenticated viewer context used to determine field visibility
      * @return Mono of paginated user responses with privacy rules applied
      */
     @Override
     public Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(
-            ViewerContext viewerContext,
-            int page,
-            int size,
             boolean currentUserFirst,
             Boolean isActive,
+            Boolean isConnected,
             String role,
             String[] groups,
+            String search,
             String sortBy,
             String sortDirection,
-            String search){
-
+            int page,
+            int size,
+            ViewerContext viewerContext){
 
         if (page < 0 || size <= 0) {
             log.error("Invalid pagination parameters: page={}, size={}", page, size);
             throw new InvalidPaginationException();
         }
 
-        String currentUserId = viewerContext != null? viewerContext.getUserId() : null;
-
         int offset = page * size;
-
-        // Convert empty array to nullAdminInvitation
+        UUID currentUserId = viewerContext != null? UUID.fromString(viewerContext.getUserId()) : null;
         String[] effectiveGroups = (groups == null || groups.length == 0) ? null : groups;
-
-        // Convert empty search to null
         String effectiveSearch = (search == null || search.trim().isEmpty()) ? null: search.trim();
-
         String normalizedSortBy = validateAndNormalizeSortBy(sortBy);
         String normalizedDirection = determineSortDirection(sortDirection, normalizedSortBy);
 
@@ -350,21 +349,32 @@ public class AppUserServiceImpl implements AppUserService {
         boolean applyCurrentUserFirst = currentUserFirst && page == 0;
 
         Flux<AppUserEntity> appUsersFlux = appUserRepository.findAllPaginated(
-                isActive, role, effectiveGroups,currentUserId, applyCurrentUserFirst, normalizedSortBy, normalizedDirection, effectiveSearch, size, offset
+                isActive, role, effectiveGroups,
+                currentUserId, applyCurrentUserFirst,
+                isConnected,
+                effectiveSearch,
+                normalizedSortBy, normalizedDirection, size, offset
         );
 
-        Mono<Long> totalCount = appUserRepository.countAll(isActive, role, effectiveGroups);
+        Mono<Long> totalCount = appUserRepository.countAll(
+                isActive, role, effectiveGroups,
+                currentUserId,
+                isConnected,
+                effectiveSearch
+        );
 
         return Mono.zip(appUsersFlux.collectList(), totalCount)
-                .map(tuple -> {
+                .flatMap(tuple -> {
                     List<AppUserEntity> appUsers = tuple.getT1();
                     long total = tuple.getT2();
 
-                    List<UserResponse> content = appUsers.stream()
-                            .map(appUser -> userResponseMapper.mapUserBasedOnContext(appUser, viewerContext))
-                            .collect(Collectors.toList());
+                    if(appUsers.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, total));
+                    }
 
-                    return new PaginatedResponse<>(content, page, size, total);
+                    return enrichAppUsersWithConnectionStatus(appUsers, currentUserId, viewerContext)
+                            .map(content -> new PaginatedResponse<>(content, page, size, total));
+
                 });
     }
 
@@ -560,5 +570,52 @@ public class AppUserServiceImpl implements AppUserService {
                     return appUser;
                 })
                 .defaultIfEmpty(appUser);
+    }
+
+    /**
+     * Enriches a list of users with connection status for the current viewer.
+     * Uses batch fetching to avoid N+1 queries.
+     *
+     * @param appUsers The list of users to enrich
+     * @param currentUserId The authenticated viewer's user ID (may be null for unauthenticated requests)
+     * @param viewerContext The viewer context for privacy-aware mapping
+     * @return A Mono containing the list of enriched UserResponse objects
+     */
+    private Mono<List<UserResponse>> enrichAppUsersWithConnectionStatus(
+        List<AppUserEntity> appUsers,
+        UUID currentUserId,
+        ViewerContext viewerContext
+    ){
+        // if no current user, all connections are false
+        if(currentUserId == null){
+            return Mono.just(appUsers.stream()
+                    .map(appUser -> {
+                        UserResponse response = userResponseMapper.mapUserBasedOnContext(appUser, viewerContext);
+                        response.setIsConnected(false);
+
+                        return response;
+                    })
+                    .collect(Collectors.toList()));
+        }
+
+        List<UUID> userIds = appUsers.stream()
+                .map(AppUserEntity::getKeycloakId)
+                .toList();
+
+        return userConnectRepository.findConnectedUserIds(currentUserId, userIds)
+                .collectList()
+                .map(connectedIds -> {
+                    Set<UUID> connectedSet = new HashSet<>(connectedIds);
+
+                    return appUsers.stream()
+                            .map(appUser -> {
+                                UserResponse response = userResponseMapper.mapUserBasedOnContext(appUser, viewerContext);
+                                response.setIsConnected(connectedSet.contains(appUser.getKeycloakId()));
+
+                                return response;
+                            })
+                            .collect(Collectors.toList());
+
+                });
     }
 }

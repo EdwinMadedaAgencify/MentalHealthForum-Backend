@@ -33,6 +33,21 @@ public interface AppUserRepository extends R2dbcRepository<AppUserEntity, String
               AND (:role IS NULL OR :role = ANY(roles))
               AND (:groups IS NULL OR groups && :groups)
               AND (:search IS NULL OR LOWER(display_name) LIKE '%' || LOWER(:search) || '%')
+              AND (:isConnected IS NULL OR
+                    (:isConnected = true AND EXISTS(
+                        SELECT 1 FROM user_connections c
+                        WHERE (c.user_1 = :currentUserId OR c.user_2 = :currentUserId)
+                            AND (c.user_1 = keycloak_id OR c.user_2 = keycloak_id)
+                            AND c.status = 'ACCEPTED'
+                    )) OR
+                    (:isConnected = false AND NOT EXISTS(
+                         SELECT 1 FROM user_connections c
+                            WHERE (c.user_1 = :currentUserId OR c.user_2 = :currentUserId)
+                                AND (c.user_1 = keycloak_id OR c.user_2 = keycloak_id)
+                                AND c.status = 'ACCEPTED'
+                    ))
+                  )
+          
             ORDER BY
                 -- 1. Current user first
                 CASE WHEN :currentUserId IS NOT NULL AND :currentUserFirst = true
@@ -77,11 +92,12 @@ public interface AppUserRepository extends R2dbcRepository<AppUserEntity, String
             @Param("isActive") Boolean isActive,
             @Param("role") String role,
             @Param("groups") String[] groups,
-            @Param("currentUserId") String currentUserId,
+            @Param("currentUserId") UUID currentUserId,
             @Param("currentUserFirst") boolean currentUserFirst,
+            @Param("isConnected") Boolean isConnected,
+            @Param("search") String search,
             @Param("sortBy") String sortBy,
             @Param("sortDirection") String sortDirection,
-            @Param("search") String search,
             @Param("limit") int limit,
             @Param("offset") int offset
     );
@@ -89,12 +105,30 @@ public interface AppUserRepository extends R2dbcRepository<AppUserEntity, String
     @Query("""
             SELECT COUNT(*) FROM app_users
             WHERE (:isActive IS NULL OR is_active = :isActive)
-            AND (:role IS NULL OR :role = ANY(roles))
-            AND (:groups IS NULL OR groups && :groups)
+              AND (:role IS NULL OR :role = ANY(roles))
+              AND (:groups IS NULL OR groups && :groups)
+              AND (:search IS NULL OR LOWER(display_name) LIKE '%' || LOWER(:search) || '%')
+              AND (:isConnected IS NULL OR
+                    (:isConnected = true AND EXISTS(
+                        SELECT 1 FROM user_connections c
+                        WHERE (c.user_1 = :currentUserId OR c.user_2 = :currentUserId)
+                            AND (c.user_1 = keycloak_id OR c.user_2 = keycloak_id)
+                            AND c.status = 'ACCEPTED'
+                    )) OR
+                    (:isConnected = false AND NOT EXISTS(
+                         SELECT 1 FROM user_connections c
+                            WHERE (c.user_1 = :currentUserId OR c.user_2 = :currentUserId)
+                                AND (c.user_1 = keycloak_id OR c.user_2 = keycloak_id)
+                                AND c.status = 'ACCEPTED'
+                    ))
+                  )
             """)
     Mono<Long> countAll(
             @Param("isActive") Boolean isActive,
             @Param("role") String role,
-            @Param("groups") String[] groups
+            @Param("groups") String[] groups,
+            @Param("currentUserId") UUID currentUserId,
+            @Param("isConnected") Boolean isConnected,
+            @Param("search") String search
     );
 }

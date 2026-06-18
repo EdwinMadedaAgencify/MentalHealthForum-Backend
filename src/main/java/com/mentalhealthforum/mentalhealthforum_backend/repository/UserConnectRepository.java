@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -21,6 +22,47 @@ public interface UserConnectRepository extends R2dbcRepository<UserConnectEntity
          AND status = 'ACCEPTED'
     """)
     Mono<Long> countAcceptedConnections(@Param("userId") UUID userId);
+
+    /**
+     * Batch fetch all user IDs that the current user is connected to.
+     */
+    @Query("""
+        SELECT
+            CASE
+                WHEN c.user_1 = :userId THEN c.user_2
+                ELSE c.user_1
+            END as connected_user_id
+        FROM user_connections c
+        WHERE (c.user_1 = :userId OR c.user_2 = :userId)
+            AND c.status = 'ACCEPTED'
+            AND (c.user_1 IN (:userIds) OR c.user_2 IN (:userIds))
+    """)
+    Flux<UUID> findConnectedUserIds(
+        @Param("userId") UUID userId,
+        @Param("userIds") List<UUID> userIds
+    );
+
+    /**
+     * Count how many of the given user IDs are connected to the current user.
+     * Used for filtering by connection status.
+     */
+    @Query("""
+        SELECT COUNT(DISTINCT
+            CASE
+                WHEN c.user_1 = :userId THEN c.user_2
+                ELSE c.user_1
+            END
+        )
+        FROM user_connections c
+        WHERE (c.user_1 = :userId OR c.user_2 = :userId)
+            AND c.status = 'ACCEPTED'
+            AND (c.user_1 IN (:userIds) OR c.user_2 IN (:userIds))
+    """)
+    Mono<Long> countConnectedUserIds(
+            @Param("userId") UUID userId,
+            @Param("userIds") List<UUID> userIds
+    );
+
 
     @Query("""
         SELECT c.* FROM user_connections c

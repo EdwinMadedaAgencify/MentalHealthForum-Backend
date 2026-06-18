@@ -1,9 +1,9 @@
 package com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.user;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.timezone.TimezoneDetails;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ProfileVisibility;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.Instant;
 import java.util.Set;
@@ -15,7 +15,8 @@ import java.util.UUID;
  */
 @Setter
 @Getter
-public class    UserResponse {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class UserResponse {
 
     // -- Core Identity ---
     private UUID userId; // The Keycloak ID

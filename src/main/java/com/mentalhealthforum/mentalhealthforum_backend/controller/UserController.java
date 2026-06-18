@@ -85,23 +85,18 @@ public class UserController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "true", name = "current_user_first") @Parameter(name = "current_user_first") boolean currentUserFirst,
             @RequestParam(required = false, name = "is_active") @Parameter(name = "is_active") Boolean isActive,
+            @RequestParam(required = false, name = "is_connected") @Parameter(name = "is_connected", description = "Filter by connection status: true (connected), false (not connected)") Boolean isConnected,
             @RequestParam(required = false) String role,
             @RequestParam(required = false) String[] groups,
-            @RequestParam(defaultValue = "display_name", name = "sort_by")
-            @Parameter(name = "sort_by", description = "Field to sort by: display_name, date_joined, posts_count, reputation_score, last_posted_at, last_active_at")
-            String sortBy,
-            @RequestParam(required = false, name = "sort_direction")
-            @Parameter(name = "sort_direction", description = "Sort direction: asc or desc")
-            String sortDirection,
-            @RequestParam(required = false, name = "search")
-            @Parameter(name = "search", description = "Search display_name (case-insensitive contains)")
-            String search
+            @RequestParam(required = false, name = "search") @Parameter(name = "search", description = "Search display_name (case-insensitive contains)") String search,
+            @RequestParam(defaultValue = "display_name", name = "sort_by") @Parameter(name = "sort_by", description = "Field to sort by: display_name, date_joined, posts_count, reputation_score, last_posted_at, last_active_at") String sortBy,
+            @RequestParam(required = false, name = "sort_direction") @Parameter(name = "sort_direction", description = "Sort direction: asc or desc") String sortDirection
     ){
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
 
         // userService.getAllUsers returns Mono<PaginatedResponse<UserRepresentation>>
-        return appUserService.getAllAppUsersWithContext(viewerContext, page, size, currentUserFirst, isActive, role, groups, sortBy, sortDirection, search)
+        return appUserService.getAllAppUsersWithContext(currentUserFirst, isActive, isConnected, role, groups, search, sortBy, sortDirection, page, size, viewerContext)
                 .map(paginatedUsers -> {
                     String message = "Paginated user records retrieved successfully.";
                     StandardSuccessResponse<PaginatedResponse<UserResponse>> response = new StandardSuccessResponse<>(message, paginatedUsers);

@@ -57,29 +57,31 @@ public interface AppUserService {
      * Applies privacy rules for each user based on their profile visibility and the viewer's privileges.
      * Sets the 'isSelf' flag for the current user in the list.
      *
-     * @param viewerContext    Authenticated viewer context for privacy rules
-     * @param page             Zero-indexed page number
-     * @param size             Number of users per page
      * @param currentUserFirst Whether to place the current user first on page 0
      * @param isActive         Optional filter by active status
+     * @param isConnected      Optional filter by is connected
      * @param role             Optional role filter
      * @param groups           Optional group filter
+     * @param search           Optional search term
      * @param sortBy           Field to sort by
      * @param sortDirection    Sort direction ("asc" or "desc")
-     * @param search           Optional search term
+     * @param page             Zero-indexed page number
+     * @param size             Number of users per page
+     * @param viewerContext    Authenticated viewer context for privacy rules
      * @return Mono of a paginated response containing user profile data with privacy rules applied.
      */
     Mono<PaginatedResponse<UserResponse>> getAllAppUsersWithContext(
-            ViewerContext viewerContext,
-            int page,
-            int size,
             boolean currentUserFirst,
             Boolean isActive,
+            Boolean isConnected,
             String role,
             String[] groups,
+            String search,
             String sortBy,
             String sortDirection,
-            String search
+            int page,
+            int size,
+            ViewerContext viewerContext
     );
 
     Mono<Void> updateLocalEmail(String userId, String newEmail);
