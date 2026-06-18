@@ -2,6 +2,9 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkCountRecord;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkStatusRecord;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchStatusRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.AddContentWarningRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.threadLifecycleAndMetadata.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
@@ -23,10 +26,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -43,6 +43,8 @@ public class ThreadServiceImpl implements ThreadService {
     private final PostRepository postRepository;
     private final ThreadTypeDefinitionRepository threadTypeDefinitionRepository;
     private final ThreadStatusDefinitionRepository threadStatusDefinitionRepository;
+    private final ThreadBookmarkRepository threadBookmarkRepository;
+    private final WatchThreadRepository watchThreadRepository;
     private final BookmarkService bookmarkService;
     private final UserModerationService userModerationService;
     private final WatchThreadService watchThreadService;
@@ -57,6 +59,8 @@ public class ThreadServiceImpl implements ThreadService {
             PostRepository postRepository,
             ThreadTypeDefinitionRepository threadTypeDefinitionRepository,
             ThreadStatusDefinitionRepository threadStatusDefinitionRepository,
+            ThreadBookmarkRepository threadBookmarkRepository,
+            WatchThreadRepository watchThreadRepository,
             BookmarkService bookmarkService,
             UserModerationService userModerationService,
             WatchThreadService watchThreadService) {
@@ -68,6 +72,8 @@ public class ThreadServiceImpl implements ThreadService {
         this.postRepository = postRepository;
         this.threadTypeDefinitionRepository = threadTypeDefinitionRepository;
         this.threadStatusDefinitionRepository = threadStatusDefinitionRepository;
+        this.threadBookmarkRepository = threadBookmarkRepository;
+        this.watchThreadRepository = watchThreadRepository;
         this.bookmarkService = bookmarkService;
         this.userModerationService = userModerationService;
 
@@ -178,10 +184,8 @@ public class ThreadServiceImpl implements ThreadService {
                 return Mono.just(new PaginatedResponse<>(List.of(), page, size, total));
             }
 
-            return Flux.fromIterable(threads)
-                    .flatMap(thread -> mapToResponse(thread, viewerContext))
-                    .collectList()
-                    .map(response -> new PaginatedResponse<>(response, page, size, total));
+            return enrichThreadWithBatchData(threads, currentUserId, viewerContext)
+                    .map(content -> new PaginatedResponse<>(content, page, size, total));
         });
     }
 
@@ -964,4 +968,139 @@ public class ThreadServiceImpl implements ThreadService {
                     .build();
         });
     }
+
+    /**
+     * Enriches a list of threads with batch-fetched data (categories, creators, bookmarks, watches).
+     * Uses batch fetching to avoid N+1 queries.
+     *
+     * @param threads The list of threads to enrich
+     * @param currentUserId The authenticated viewer's user ID
+     * @param viewerContext The viewer context for privacy-aware mapping
+     * @return A Mono containing the list of enriched ThreadResponse objects
+     */
+    private Mono<List<ThreadResponse>> enrichThreadWithBatchData(
+        List<ThreadEntity> threads,
+        UUID currentUserId,
+        ViewerContext viewerContext
+    ){
+        // Extract IDs for batch fetching
+        List<UUID> categoryIds = threads.stream()
+                .map(ThreadEntity::getCategoryId)
+                .distinct()
+                .toList();
+
+        List<UUID> creatorIds = threads.stream()
+                .map(ThreadEntity::getCreatorId)
+                .distinct()
+                .toList();
+
+        List<UUID> threadIds = threads.stream()
+                .map(ThreadEntity::getId)
+                .distinct()
+                .toList();
+
+        // Batch fetch all data in parallel
+        Mono<Map<UUID, CategoryEntity>> categoriesMap =
+                categoryRepository.findCategoriesByIds(categoryIds)
+                        .collectMap(CategoryEntity::getId);
+
+        Mono<Map<UUID, AppUserEntity>> creatorsMap =
+                appUserRepository.findUsersByKeycloakIds(creatorIds)
+                        .collectMap(AppUserEntity::getKeycloakId);
+
+        Mono<Map<UUID, Boolean>> bookmarkStatusMap =
+                threadBookmarkRepository.findBookmarkStatusForThreads(currentUserId, threadIds)
+                        .collectMap(BookmarkStatusRecord::thread_id, BookmarkStatusRecord::is_bookmarked)
+                        .defaultIfEmpty(new HashMap<>());
+
+        Mono<Map<UUID, Long>> bookmarkCountMap =
+                threadBookmarkRepository.findBookmarkCountsForThreads(threadIds)
+                        .collectMap(BookmarkCountRecord::thread_id, BookmarkCountRecord::count)
+                        .defaultIfEmpty(new HashMap<>());
+
+        Mono<Map<UUID, Boolean>> watchStatusMap =
+                watchThreadRepository.findWatchStatusForThreads(currentUserId, threadIds)
+                        .collectMap(WatchStatusRecord::thread_id, WatchStatusRecord::is_watched)
+                        .defaultIfEmpty(new HashMap<>());
+
+        return Mono.zip(
+                categoriesMap,
+                creatorsMap,
+                bookmarkStatusMap,
+                bookmarkCountMap,
+                watchStatusMap
+        ).map(tuple -> {
+            Map<UUID, CategoryEntity> categories = tuple.getT1();
+            Map<UUID, AppUserEntity> creators = tuple.getT2();
+            Map<UUID, Boolean> bookmarkStatus = tuple.getT3();
+            Map<UUID, Long> bookmarkCount = tuple.getT4();
+            Map<UUID, Boolean> watchStatus = tuple.getT5();
+
+            return threads.stream()
+                    .map(thread -> mapResponseWithBatchData(
+                            thread,
+                            categories.get(thread.getCategoryId()),
+                            creators.get(thread.getCreatorId()),
+                            bookmarkStatus.getOrDefault(thread.getId(), false),
+                            bookmarkCount.getOrDefault(thread.getId(), 0L),
+                            watchStatus.getOrDefault(thread.getId(), false),
+                            viewerContext
+                    ))
+                    .toList();
+
+        });
+
+    }
+
+    private ThreadResponse mapResponseWithBatchData(
+            ThreadEntity thread,
+            CategoryEntity category,
+            AppUserEntity creator,
+            Boolean isBookmarked,
+            Long bookmarkCount,
+            Boolean isWatched,
+            ViewerContext viewerContext) {
+
+        return ThreadResponse.builder()
+                .id(thread.getId())
+                .categoryId(thread.getCategoryId())
+                .categoryName(category.getName())
+                .categorySlug(category.getSlug())
+                .title(thread.getTitle())
+                .creatorId(thread.getCreatorId())
+                .creatorDisplayName(creator.getPublicIdentifier())
+                .creatorAvatarUrl(creator.getAvatarUrl())
+                .threadType(thread.getThreadType())
+                .threadStatus(thread.getThreadStatus())
+                .contentWarningType(thread.getContentWarningType())
+                .contentWarningCustomText(thread.getContentWarningCustomText())
+                .tags(thread.getTags())
+                .isSticky(thread.getIsSticky())
+                .isFeatured(thread.getIsFeatured())
+                .isBookmarked(isBookmarked)
+                .isWatched(isWatched)
+                .bookmarkCount((bookmarkCount.intValue()))
+                .postCount(thread.getPostCount())
+                .viewCount(thread.getViewCount())
+                .bestAnswerPostId(thread.getBestAnswerPostId())
+                .resolvedAt(thread.getResolvedAt())
+                .resolvedByUserId(thread.getResolvedByUserId())
+
+                // lock metadata
+                .lockReason(thread.getLockReason())
+                .lockedBy(thread.getLockedBy())
+                .lockedAt(thread.getLockedAt())
+                .lockExpiresAt(thread.getLockExpiresAt())
+
+                // Edit metadata
+                .lastEditedAt(thread.getUpdatedAt())
+
+                // Timestamps
+                .createdAt(thread.getCreatedAt())
+                .updatedAt(thread.getUpdatedAt())
+                .lastActivityAt(thread.getLastActivityAt())
+                .build();
+    }
+
+
 }

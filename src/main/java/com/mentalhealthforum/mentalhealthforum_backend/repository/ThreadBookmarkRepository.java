@@ -1,5 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkCountRecord;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkStatusRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkedThreadRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadBookmarkEntity;
 import org.springframework.data.r2dbc.repository.Query;
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -17,6 +20,33 @@ public interface ThreadBookmarkRepository extends R2dbcRepository<ThreadBookmark
     Mono<Boolean> existsByUserIdAndThreadId(UUID userId, UUID threadId);
 
     Mono<Void> deleteByUserIdAndThreadId(UUID userId, UUID threadId);
+
+    /**
+     * Batch fetch bookmark status for threads
+     */
+    @Query("""
+        SELECT b.thread_id as thread_id, true as is_bookmarked
+        FROM thread_bookmarks b
+        WHERE b.thread_id IN (:threadIds) AND b.user_id = :userId
+    """)
+    Flux<BookmarkStatusRecord> findBookmarkStatusForThreads(
+        @Param("userId") UUID userId,
+        @Param("threadIds") List<UUID> threadIds
+    );
+
+    /**
+     * Batch fetch bookmark status for threads
+     */
+    @Query("""
+        SELECT thread_id, COUNT(*) as count
+        FROM thread_bookmarks
+        WHERE thread_id IN (:threadIds)
+        GROUP BY thread_id
+    """)
+    Flux<BookmarkCountRecord> findBookmarkCountsForThreads(
+            @Param("threadIds") List<UUID> threadIds
+    );
+
 
     @Query("""
         SELECT b.id as bookmark_id,

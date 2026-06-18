@@ -9,6 +9,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -20,6 +21,12 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
     Mono<Boolean> existsByName(String name);
 
     Mono<Boolean> existsBySlug(String slug);
+
+    /**
+     * Batch fetch categories by IDs
+     */
+    @Query("SELECT * FROM forum_categories WHERE id IN (:ids)")
+    Flux<CategoryEntity> findCategoriesByIds(@Param("ids") List<UUID> ids);
 
     @Query("""
         SELECT CASE WHEN COUNT(*) > 0 THEN true ELSE false END

@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchStatusRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.model.WatchThreadEntity;
 import org.springframework.data.r2dbc.repository.Query;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -19,6 +21,20 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
     Mono<Void> deleteByUserIdAndThreadId(UUID userId, UUID threadId);
 
     Mono<Long> countByUserId(UUID userId);
+
+    /**
+     * Batch fetch watch status for threads
+     */
+    @Query("""
+        SELECT w.thread_id as thread_id, true as is_watched
+        FROM watch_threads w
+        WHERE w.thread_id IN (:threadIds) AND w.user_id = :userId
+    """)
+    Flux<WatchStatusRecord> findWatchStatusForThreads(
+            @Param("userId") UUID userId,
+            @Param("threadIds")List<UUID> threadIds
+    );
+
 
     @Query("""
         SELECT wt.id as watch_id,
