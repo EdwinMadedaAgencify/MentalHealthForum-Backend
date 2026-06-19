@@ -2,6 +2,7 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkStatusRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadResponse;
@@ -11,7 +12,9 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.WatchThreadEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadBookmarkRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.WatchThreadRepository;
@@ -23,8 +26,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class WatchThreadServiceImpl implements WatchThreadService {
@@ -35,6 +38,7 @@ public class WatchThreadServiceImpl implements WatchThreadService {
     private final WatchThreadRepository watchThreadRepository;
     private final ThreadRepository threadRepository;
     private final ThreadBookmarkRepository threadBookmarkRepository;
+    private final AppUserRepository appUserRepository;
     private final AppUserService appUserService;
 
     public WatchThreadServiceImpl(
@@ -42,11 +46,13 @@ public class WatchThreadServiceImpl implements WatchThreadService {
             WatchThreadRepository watchThreadRepository,
             ThreadRepository threadRepository,
             ThreadBookmarkRepository threadBookmarkRepository,
+            AppUserRepository appUserRepository,
             AppUserService appUserService) {
         this.transactionalOperator = transactionalOperator;
         this.watchThreadRepository = watchThreadRepository;
         this.threadRepository = threadRepository;
         this.threadBookmarkRepository = threadBookmarkRepository;
+        this.appUserRepository = appUserRepository;
         this.appUserService = appUserService;
     }
 
@@ -114,15 +120,21 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                 effectiveSortBy, effectiveSortDirection,
                 size, offset
                 )
-                .flatMap(watchThread -> mapToResponse(watchThread, userId))
                 .collectList()
-                .zipWith(watchThreadRepository.countByUserIdWithFilters(
-                        userId,
-                        categoryId, creatorId, effectiveThreadType, effectiveThreadStatus,
-                        hasContentWarning, isBookmarked, notificationEnabled,
-                        effectiveSearch)
-                )
-                .map(tuple ->new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                .flatMap(records -> {
+                    if(records.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
+                    return enrichWatchedThreadsWithBatchData(records, userId)
+                            .zipWith(watchThreadRepository.countByUserIdWithFilters(
+                                    userId,
+                                    categoryId, creatorId, effectiveThreadType, effectiveThreadStatus,
+                                    hasContentWarning, isBookmarked, notificationEnabled,
+                                    effectiveSearch)
+                            )
+                            .map(tuple ->new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+
+                });
 
     }
 
@@ -210,5 +222,76 @@ public class WatchThreadServiceImpl implements WatchThreadService {
             return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
         }
         return "DESC";
+    }
+
+    /**
+     * Enriches a list of watched thread records with creator details using batch fetching.
+     * Uses batch fetching to avoid N+1 queries.
+     */
+    private Mono<List<WatchThreadResponse>> enrichWatchedThreadsWithBatchData(
+        List<WatchThreadRecord> records,
+        UUID userId
+    ){
+        if(records.isEmpty()){
+            return Mono.just(List.of());
+        }
+
+        // Extract unique creator IDs
+        List<UUID> creatorIds = records.stream()
+                .map(WatchThreadRecord::creator_id)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // Batch fetch creator IDs
+        Mono<Map<UUID, UserDetails>> creatorsMap = appUserRepository
+                .findAppUsersByKeycloakIds(creatorIds)
+                .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails)
+                .defaultIfEmpty(new HashMap<>());
+
+        // Batch fetch bookmark status (for each watched thread)\
+        List<UUID> threadIds = records.stream()
+                .map(WatchThreadRecord::thread_id)
+                .toList();
+
+        Mono<Map<UUID, Boolean>> bookmarkStatusMap = threadBookmarkRepository
+                .findBookmarkStatusForThreads(userId, threadIds)
+                .collectMap(BookmarkStatusRecord::thread_id, BookmarkStatusRecord::is_bookmarked)
+                .defaultIfEmpty(new HashMap<>());
+
+        return Mono.zip(creatorsMap, bookmarkStatusMap)
+                .map(tuple -> {
+                    Map<UUID, UserDetails> creators = tuple.getT1();
+                    Map<UUID, Boolean> bookmarkStatus = tuple.getT2();
+
+                    return records.stream()
+                            .map(record -> {
+                                UserDetails creator = creators.get(record.creator_id());
+                                Boolean isBookmarked = bookmarkStatus.getOrDefault(record.thread_id(), false);
+
+                                return WatchThreadResponse.builder()
+                                        .id(record.watch_id())
+                                        .notificationEnabled(record.notification_enabled())
+                                        .watchedAt(record.watched_at())
+                                        .threadId(record.thread_id())
+                                        .threadTitle(record.thread_title())
+                                        .threadType(ThreadType.fromString(record.thread_type()))
+                                        .threadStatus(ThreadStatus.fromString(record.thread_status()))
+                                        .categoryId(record.category_id())
+                                        .creatorId(record.creator_id())
+                                        .creatorDisplayName(creator.getDisplayName())
+                                        .creatorAvatarUrl(creator.getAvatarUrl())
+                                        .postCount(record.post_count())
+                                        .viewCount(record.view_count())
+                                        .lastActivityAt(record.last_activity_at())
+                                        .contentWarningType(ContentWarningType.fromString(record.content_warning_type()))
+                                        .isOpen(ThreadStatus.fromString(record.thread_status()) == ThreadStatus.OPEN)
+                                        .isBookmarked(isBookmarked)
+                                        .isSticky(record.is_sticky())
+                                        .isFeatured(record.is_featured())
+                                        .build();
+                            })
+                            .collect(Collectors.toList());
+                });
     }
 }
