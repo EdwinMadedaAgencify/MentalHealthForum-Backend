@@ -8,9 +8,11 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ModerationAction;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryTagAssignmentEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryTagEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryTagAssignmentRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryTagRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryRepository;
@@ -26,9 +28,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 
 
@@ -44,6 +44,7 @@ public class CategoryTagServiceImpl implements CategoryTagService {
     private final CategoryTagRepository categoryTagRepository;
     private final CategoryTagAssignmentRepository categoryTagAssignmentRepository;
     private final CategoryRepository categoryRepository;
+    private final AppUserRepository appUserRepository;
     private final AppUserService appUserService;
 
     public CategoryTagServiceImpl(
@@ -51,11 +52,13 @@ public class CategoryTagServiceImpl implements CategoryTagService {
             CategoryTagRepository categoryTagRepository,
             CategoryTagAssignmentRepository categoryTagAssignmentRepository,
             CategoryRepository categoryRepository,
+            AppUserRepository appUserRepository,
             AppUserService appUserService) {
         this.transactionalOperator = transactionalOperator;
         this.categoryTagRepository = categoryTagRepository;
         this.categoryTagAssignmentRepository = categoryTagAssignmentRepository;
         this.categoryRepository = categoryRepository;
+        this.appUserRepository = appUserRepository;
         this.appUserService = appUserService;
     }
 
@@ -165,10 +168,16 @@ public class CategoryTagServiceImpl implements CategoryTagService {
         String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
 
         return categoryTagRepository.searchTags(effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset)
-                .flatMap(this::mapToResponse)
                 .collectList()
-                .zipWith(categoryTagRepository.countSearchTags(effectiveSearch))
-                .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                .flatMap(tags -> {
+                    if(tags.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
+                    return enrichTagsWithBatchData(tags)
+                            .zipWith(categoryTagRepository.countSearchTags(effectiveSearch))
+                            .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+
+                });
     }
 
     private String determineSortDirection(String sortDirection, String sortBy) {
@@ -545,6 +554,70 @@ public class CategoryTagServiceImpl implements CategoryTagService {
                     .assignedAt(assignment.getAssignedAt())
                     .build();
         });
+    }
+
+    /**
+     * Enriches a list of tags with usage counts and creator details using batch fetching.
+     * Uses batch fetching to avoid N+1 queries.
+     */
+    private Mono<List<CategoryTagResponse>> enrichTagsWithBatchData(
+        List<CategoryTagEntity> tags
+    ){
+        if(tags.isEmpty()){
+            return Mono.just(List.of());
+        }
+
+        List<UUID> tagIds = tags.stream()
+                .map(CategoryTagEntity::getId)
+                .toList();
+
+        List<UUID> creatorsIds = tags.stream()
+                .map(CategoryTagEntity::getCreatedBy)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // Batch fetch usage counts
+        Mono<Map<UUID, Long>> usageCountMap = categoryTagAssignmentRepository
+                .findUsageCountForTags(tagIds)
+                .collectMap(TagUsageRecord::tag_id, TagUsageRecord::count)
+                .defaultIfEmpty(new HashMap<>());
+
+        // Batch fetch creator details
+        Mono<Map<UUID, UserDetails>> creatorDetailsMap = Mono.just(new HashMap<>());
+        if(!creatorsIds.isEmpty()){
+            creatorDetailsMap = appUserRepository
+                    .findAppUsersByKeycloakIds(creatorsIds)
+                    .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails)
+                    .defaultIfEmpty(new HashMap<>());
+
+        }
+
+        return Mono.zip(usageCountMap, creatorDetailsMap)
+                .map(tuple ->{
+                    Map<UUID, Long> usageCounts = tuple.getT1();
+                    Map<UUID, UserDetails> creatorDetails = tuple.getT2();
+
+                    return tags.stream()
+                            .map(tag -> {
+                                Long usage = usageCounts.getOrDefault(tag.getId(), 0L);
+                                UserDetails creator = creatorDetails.get(tag.getCreatedBy());
+
+                                return CategoryTagResponse.builder()
+                                        .id(tag.getId())
+                                        .name(tag.getName())
+                                        .slug(tag.getSlug())
+                                        .description(tag.getDescription())
+                                        .createdBy(tag.getCreatedBy())
+                                        .createdByDisplayName(creator.getDisplayName())
+                                        .usage(usage.intValue())
+                                        .createdAt(tag.getCreatedAt())
+                                        .updatedAt(tag.getUpdatedAt())
+                                        .build();
+                            })
+                            .toList();
+                });
+
     }
 
 

@@ -1005,7 +1005,7 @@ public class ThreadServiceImpl implements ThreadService {
                         .collectMap(CategoryEntity::getId);
 
         Mono<Map<UUID, AppUserEntity>> creatorsMap =
-                appUserRepository.findUsersByKeycloakIds(creatorIds)
+                appUserRepository.findAppUsersByKeycloakIds(creatorIds)
                         .collectMap(AppUserEntity::getKeycloakId);
 
         Mono<Map<UUID, Boolean>> bookmarkStatusMap =

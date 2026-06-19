@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -17,9 +18,23 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
 
     Mono<Void> deleteByUserIdAndCategoryId(UUID userId, UUID categoryId);
 
-    Flux<FocusCategoryEntity> findByUserId(UUID userId);
-
     Mono<Long> countByUserId(UUID userId);
+
+    /**
+     * Batch fetch focused category IDs for a user.
+     * Returns only the category IDs that the user has focused.
+     */
+    @Query("""
+        SELECT category_id
+        FROM focus_categories
+        WHERE user_id = :userId
+        AND category_id IN (:categoryIds)
+    """)
+    Flux<UUID> findFocusCategoryIds(
+        @Param("userId") UUID userId,
+        @Param("categoryIds")List<UUID> categoryIds
+    );
+
 
     @Query("""
         SELECT fc.* FROM focus_categories fc
@@ -77,7 +92,5 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
             @Param("notificationEnabled") Boolean notificationEnabled,
             @Param("search") String search
     );
-
-
 
 }

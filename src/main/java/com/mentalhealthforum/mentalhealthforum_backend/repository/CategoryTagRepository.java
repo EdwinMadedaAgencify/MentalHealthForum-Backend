@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.CategoryTagWithCategoryId;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryTagEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -20,6 +22,20 @@ public interface CategoryTagRepository extends R2dbcRepository<CategoryTagEntity
     Mono<Boolean> existsByName(String name);
 
     Mono<Boolean> existsBySlug(String slug);
+
+    /**
+     * Batch fetch tags for multiple categories.
+     * Returns a map of categoryId → List<CategoryTagResponse>
+     */
+    @Query("""
+        SELECT a.category_id, t.*
+        FROM category_tags t
+        JOIN category_tag_assignments a ON t.id = a.tag_id
+        WHERE a.category_id IN (:categoryIds)
+        ORDER BY t.name ASC
+    """)
+    Flux<CategoryTagWithCategoryId> findTagsByCategoryId(@Param("categoryIds") List<UUID> categoryIds);
+
 
     @Query("""
         SELECT CASE WHEN COUNT(*) > 0 THEN true ELSE false END

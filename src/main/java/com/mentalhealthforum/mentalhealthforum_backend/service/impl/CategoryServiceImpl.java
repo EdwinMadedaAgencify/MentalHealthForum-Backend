@@ -9,9 +9,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ModerationAction;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryTagAssignmentRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.*;
 import com.mentalhealthforum.mentalhealthforum_backend.service.CategoryService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.CategoryTagService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.FocusCategoryService;
@@ -25,9 +23,9 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class CategoryServiceImpl implements CategoryService {
@@ -38,7 +36,9 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository categoryRepository;
     private final ThreadRepository threadRepository;
     private final CategoryTagService categoryTagService;
+    private final CategoryTagRepository categoryTagRepository;
     private final CategoryTagAssignmentRepository categoryTagAssignmentRepository;
+    private final FocusCategoryRepository focusCategoryRepository;
     private final FocusCategoryService focusCategoryService;
 
 
@@ -46,13 +46,17 @@ public class CategoryServiceImpl implements CategoryService {
                                CategoryRepository categoryRepository,
                                ThreadRepository threadRepository,
                                CategoryTagService categoryTagService,
+                               CategoryTagRepository categoryTagRepository,
                                CategoryTagAssignmentRepository categoryTagAssignmentRepository,
+                               FocusCategoryRepository focusCategoryRepository,
                                FocusCategoryService focusCategoryService) {
         this.transactionalOperator = transactionalOperator;
         this.categoryRepository = categoryRepository;
         this.threadRepository = threadRepository;
         this.categoryTagService = categoryTagService;
+        this.categoryTagRepository = categoryTagRepository;
         this.categoryTagAssignmentRepository = categoryTagAssignmentRepository;
+        this.focusCategoryRepository = focusCategoryRepository;
         this.focusCategoryService = focusCategoryService;
     }
 
@@ -468,20 +472,34 @@ public class CategoryServiceImpl implements CategoryService {
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
         String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
         String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+        Boolean effectiveIsParent = (parentCategoryId != null && isParent != null) ? null : isParent;
 
         // User-friendly override: parent_category_id takes precedence
-        if(parentCategoryId != null && isParent != null){
+        if(effectiveIsParent == null){
             log.warn("Both parent_category_id and is_parent=true provided. Ignoring is_parent in favor of parent_category_id.");
-            isParent = null;
         }
 
         return categoryRepository.findAllCategoriesPaginated(
-                currentUserId, tagId, parentCategoryId, isParent, isActive, isFocused, effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset
-        )
-                .flatMap(category -> mapToResponseWithTags(category, viewerContext))
+                    currentUserId,
+                    tagId, parentCategoryId,
+                    effectiveIsParent, isActive, isFocused,
+                    effectiveSearch,
+                    effectiveSortBy, effectiveSortDirection,
+                    size, offset
+                )
                 .collectList()
-                .zipWith(categoryRepository.countAllCategoriesWithFilters(currentUserId, tagId, parentCategoryId, isParent, isActive, isFocused, effectiveSearch))
-                .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                .flatMap(categories -> {
+                    if(categories.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
+                   return enrichCategoriesWithBatchData(categories, viewerContext)
+                           .zipWith(categoryRepository.countAllCategoriesWithFilters(
+                                   currentUserId,
+                                   tagId, parentCategoryId,
+                                   effectiveIsParent, isActive, isFocused,
+                                   effectiveSearch))
+                           .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                });
 
     }
 
@@ -501,7 +519,7 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     private Mono<CategoryResponse> mapToResponseWithTags(CategoryEntity category, ViewerContext viewerContext){
-      
+
         return focusCategoryService.isCategoryFocused(category.getId(), viewerContext)
                 .flatMap(isFocused -> categoryTagService.getTagsForCategory(category.getId())
                         .collectList()
@@ -524,4 +542,93 @@ public class CategoryServiceImpl implements CategoryService {
                                 .build()));
 
     }
+
+    /**
+     * Enriches a list of categories with their tags using batch fetching.
+     * Uses batch fetching to avoid N+1 queries.
+     */
+    private Mono<List<CategoryResponse>> enrichCategoriesWithBatchData(
+        List<CategoryEntity> categories,
+        ViewerContext viewerContext
+    ){
+        if(categories.isEmpty()){
+            return Mono.just(List.of());
+        }
+
+        UUID currentUserId = viewerContext != null? UUID.fromString(viewerContext.getUserId()): null;
+
+        List<UUID> categoryIds = categories.stream()
+                .map(CategoryEntity::getId)
+                .toList();
+
+        // Batch fetch all tags for all categories
+        Mono<Map<UUID, List<CategoryTagResponse>>> tagsMap = categoryTagRepository
+                .findTagsByCategoryId(categoryIds)
+                .collectList()
+                .map(tagRecords -> tagRecords.stream()
+                        .collect(Collectors.groupingBy(
+                                CategoryTagWithCategoryId::category_id,
+                                Collectors.mapping(record -> CategoryTagResponse.builder()
+                                                .id(record.id())
+                                                .name(record.name())
+                                                .slug(record.slug())
+                                                .description(record.description())
+                                                .createdBy(record.created_by())
+                                                .createdAt(record.created_at())
+                                                .updatedAt(record.updated_at())
+                                                .build(),
+                                        Collectors.toList())
+                        )))
+                .defaultIfEmpty(new HashMap<>());
+
+        // Batch fetch focus status for all categories (if user authenticated)
+        Mono<Set<UUID>> focusedSet = Mono.just(Set.of());
+        if(currentUserId != null){
+            focusedSet = focusCategoryRepository.findFocusCategoryIds(currentUserId, categoryIds)
+                    .collect(Collectors.toSet())
+                    .defaultIfEmpty(Set.of());
+        }
+
+        return Mono.zip(tagsMap, focusedSet)
+                .map(tuple -> {
+                    Map<UUID, List<CategoryTagResponse>> tagsByCategory = tuple.getT1();
+                    Set<UUID> focusIds = tuple.getT2();
+
+                    return categories.stream()
+                        .map(category -> {
+                            List<CategoryTagResponse> tags = tagsByCategory.getOrDefault(
+                                    category.getId(), List.of()
+                            );
+                            boolean isFocused = focusIds.contains(category.getId());
+                            return mapCategoryResponse(category, tags, isFocused);
+                        })
+                        .collect(Collectors.toList());
+
+                });
+    }
+
+    private CategoryResponse mapCategoryResponse(
+            CategoryEntity category,
+            List<CategoryTagResponse> tags,
+            Boolean isFocused
+    ) {
+        return CategoryResponse.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .slug(category.getSlug())
+                .description(category.getDescription())
+                .colorTheme(category.getColorTheme())
+                .parentCategoryId(category.getParentCategoryId())
+                .contentWarningType(category.getContentWarningType())
+                .contentWarningCustomText(category.getContentWarningCustomText())
+                .sortOrder(category.getSortOrder())
+                .isActive(category.getIsActive())
+                .createdAt(category.getCreatedAt())
+                .isParent(category.isParent())
+                .isChild(category.isChild())
+                .isFocused(isFocused)
+                .tags(tags)
+                .build();
+    }
+
 }

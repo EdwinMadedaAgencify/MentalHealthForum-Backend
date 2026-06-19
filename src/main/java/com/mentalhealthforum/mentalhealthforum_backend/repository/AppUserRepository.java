@@ -137,6 +137,6 @@ public interface AppUserRepository extends R2dbcRepository<AppUserEntity, String
      * Batch fetch users by Keycloak IDs
      */
     @Query("SELECT * FROM app_users WHERE keycloak_id IN (:ids)")
-    Flux<AppUserEntity> findUsersByKeycloakIds(@Param("ids") List<UUID> ids);
+    Flux<AppUserEntity> findAppUsersByKeycloakIds(@Param("ids") List<UUID> ids);
 
 }
