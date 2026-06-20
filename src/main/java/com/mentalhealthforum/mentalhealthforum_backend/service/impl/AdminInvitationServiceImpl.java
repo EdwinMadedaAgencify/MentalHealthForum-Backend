@@ -5,6 +5,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentit
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentity.adminUser.PendingAdminInviteDto;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.PendingInviteSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AdminInvitationEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
@@ -119,10 +120,8 @@ public class AdminInvitationServiceImpl implements AdminInvitationService {
             int size,
             String[] groups,
             UUID invitedByUserId,
-            String sortBy,
-            String sortDirection,
-            String search,
-            OnboardingStage onboardingStage) {
+            String search, OnboardingStage onboardingStage, String sortBy,
+            String sortDirection) {
 
         if (page < 0 || size <= 0) {
             log.error("Invalid pagination parameters: page={}, size={}", page, size);
@@ -130,7 +129,7 @@ public class AdminInvitationServiceImpl implements AdminInvitationService {
         }
 
         int offset = page * size;
-        String normalizedSortBy = (sortBy == null)? "date_created": sortBy;
+        PendingInviteSortField sortByField = PendingInviteSortField.fromString(sortBy);
         String normalizedDir = "asc".equalsIgnoreCase(sortDirection) ? "ASC" : "DESC";
 
         String whereClause = """
@@ -151,7 +150,7 @@ public class AdminInvitationServiceImpl implements AdminInvitationService {
             %s
             ORDER BY ai.%s %s
             LIMIT :limit OFFSET :offset
-        """.formatted(whereClause, normalizedSortBy, normalizedDir); // Using .formatted() is much cleaner!
+        """.formatted(whereClause, sortByField.getValue(), normalizedDir); // Using .formatted() is much cleaner!
 
         String countSql = "SELECT COUNT(*) FROM admin_invitations ai %s".formatted(whereClause);
 

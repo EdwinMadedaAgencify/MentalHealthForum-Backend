@@ -27,10 +27,11 @@ public interface AdminInvitationService {
             int size,
             String[] groups,
             UUID invitedByUserId,
-            String sortBy,
-            String sortDirection,
             String search,
-            OnboardingStage onboardingStage);
+            OnboardingStage onboardingStage,
+            String sortBy,
+            String sortDirection
+    );
 
     Mono<Void> completeInvitation(UUID keycloakId);
 }

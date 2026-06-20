@@ -105,23 +105,14 @@ public class AdminUserController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String[] groups,
-            @RequestParam(required = false, name = "invited_by_user_id")
-            @Parameter(name = "invited_by_user_id")
-            UUID invitedByUserId,
-            @RequestParam(defaultValue = "date_created", name = "sort_by")
-            @Parameter(name = "sort_by", description = "Field to sort by: username, email, date_created")
-            String sortBy,
-            @RequestParam(required = false, name = "sort_direction")
-            @Parameter(name = "sort_direction", description = "Sort direction: asc or desc")
-            String sortDirection,
-            @RequestParam(required = false, name = "onboarding_stage")
-            @Parameter(description = "Filter by stage: AWAITING_VERIFICATION, AWAITING_PASSWORD_RESET, AWAITING_PROFILE_COMPLETION")
-            OnboardingStage onboardingStage,
-            @RequestParam(required = false, name = "search")
-            @Parameter(name = "search")
-            String search){
+            @RequestParam(required = false, name = "invited_by_user_id") @Parameter(name = "invited_by_user_id") UUID invitedByUserId,
+            @RequestParam(required = false, name = "onboarding_stage") @Parameter(description = "Filter by stage: AWAITING_VERIFICATION, AWAITING_PASSWORD_RESET, AWAITING_PROFILE_COMPLETION") OnboardingStage onboardingStage,
+            @RequestParam(required = false, name = "search") @Parameter(name = "search") String search,
+            @RequestParam(defaultValue = "date_created", name = "sort_by") @Parameter(name = "sort_by", description = "Field to sort by: username, email, date_created") String sortBy,
+            @RequestParam(required = false, name = "sort_direction") @Parameter(name = "sort_direction", description = "Sort direction: asc or desc") String sortDirection
+       ){
 
-        return  adminInvitationService.getPendingInvites(page, size, groups, invitedByUserId, sortBy, sortDirection, search, onboardingStage)
+        return  adminInvitationService.getPendingInvites(page, size, groups, invitedByUserId, search, onboardingStage, sortBy, sortDirection)
                 .map(paginated -> ResponseEntity.ok(
                         new StandardSuccessResponse<>("Pending invitations retrieved.", paginated)
                 ));
