@@ -10,6 +10,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ContentWarningType;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.BookmarkSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadBookmarkEntity;
@@ -93,15 +94,15 @@ public class BookmarkServiceImpl implements BookmarkService {
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
         String effectiveThreadType =  threadType != null? threadType.name() : null;
         String effectiveThreadStatus  = threadStatus != null? threadStatus.name() : null;
-        String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+        BookmarkSortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection);
 
         return bookmarkRepository.findBookmarkedThreadsPaginated(
                     userId,
                     categoryId, creatorId,
                     effectiveThreadType, effectiveThreadStatus, hasContentWarning,
                     effectiveSearch,
-                    effectiveSortBy, effectiveSortDirection,
+                    sortByField.getValue(), effectiveSortDirection,
                     size, offset)
                 .collectList()
                 .flatMap(records -> {
@@ -170,16 +171,11 @@ public class BookmarkServiceImpl implements BookmarkService {
                 .flatMap(bookmark -> bookmarkRepository.findBookmarkById(bookmark.getId(), bookmark.getUserId()));
     }
 
-    private String validateAndNormalizeSortBy(String sortBy) {
-        Set<String> allowedFields = Set.of("title", "bookmarked_at", "last_activity_at", "post_count");
-
-        if(sortBy == null || !allowedFields.contains(sortBy)){
-            return "bookmarked_at";
-        }
-        return sortBy;
+    private BookmarkSortField validateAndNormalizeSortBy(String sortBy) {
+       return BookmarkSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, String effectiveSortBy) {
+    private String determineSortDirection(String sortDirection) {
         if(sortDirection != null){
             return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
         }

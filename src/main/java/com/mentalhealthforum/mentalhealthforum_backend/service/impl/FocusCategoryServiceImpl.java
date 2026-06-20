@@ -3,11 +3,14 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.FocusCategoryResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.ThreadCountRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.FocusCategorySortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.FocusCategoryEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.FocusCategoryRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.CategoryRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
@@ -19,8 +22,7 @@ import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 public class FocusCategoryServiceImpl implements FocusCategoryService {
@@ -50,7 +52,7 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
         return validateCategoryExists(categoryId)
                 .then(checkNotAlreadyFocused(userId, categoryId))
                 .then(createFocusCategory(userId, categoryId))
-                .flatMap(this::mapToResponse)
+                .flatMap(this::enrichSingleFocusCategoryWithData)
                 .as(transactionalOperator::transactional);
     }
 
@@ -88,22 +90,27 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
         int offset = page * size;
         UUID userId = UUID.fromString(viewerContext.getUserId());
         String effectiveSearch = (search == null || search.isBlank())? null : search.trim();
-        String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+        FocusCategorySortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection);
 
-        return focusCategoryRepository.findPaginatedByUserId(userId, notificationEnabled, effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset)
-                .flatMap(this::mapToResponse)
+        return focusCategoryRepository.findPaginatedByUserId(
+                        userId, notificationEnabled,
+                        effectiveSearch,
+                        sortByField.getValue(), effectiveSortDirection,
+                        size, offset)
                 .collectList()
-                .zipWith(focusCategoryRepository.countByUserIdWithFilters(userId, notificationEnabled, effectiveSearch))
-                .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                .flatMap(focusCategories -> {
+                    if(focusCategories.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
 
-    }
+                    return enrichFocusCategoriesWithBatchData(focusCategories)
+                            .zipWith(focusCategoryRepository.countByUserIdWithFilters(
+                                    userId, notificationEnabled,
+                                    effectiveSearch))
+                            .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                });
 
-    private String determineSortDirection(String sortDirection, String effectiveSortBy) {
-        if(sortDirection != null){
-            return "desc".equalsIgnoreCase(sortDirection)? "DESC" : "ASC";
-        }
-        return "DESC";
     }
 
     @Override
@@ -141,7 +148,23 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
         return  focusCategoryRepository.save(focusCategory);
     }
 
-    private Mono<FocusCategoryResponse> mapToResponse(FocusCategoryEntity focusCategory){
+
+    private FocusCategorySortField validateAndNormalizeSortBy(String sortBy) {
+       return FocusCategorySortField.fromString(sortBy);
+    }
+
+    private String determineSortDirection(String sortDirection) {
+        if(sortDirection != null){
+            return "desc".equalsIgnoreCase(sortDirection)? "DESC" : "ASC";
+        }
+        return "DESC";
+    }
+
+    /**
+     * Enriches a single focus category with category details and thread count.
+     * Uses individual queries since only one item is being fetched.
+     */
+    private Mono<FocusCategoryResponse> enrichSingleFocusCategoryWithData(FocusCategoryEntity focusCategory){
         return Mono.zip(
                 categoryRepository.findById(focusCategory.getCategoryId()),
                 threadRepository.countActiveThreadsByCategory(focusCategory.getCategoryId())
@@ -149,30 +172,73 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
             CategoryEntity category = tuple.getT1();
             Long threadCount = tuple.getT2();
 
-            return FocusCategoryResponse.builder()
-                    .id(focusCategory.getId())
-                    .notificationEnabled(focusCategory.getNotificationEnabled())
-                    .focusedAt(focusCategory.getCreatedAt())
-                    .categoryId(category.getId())
-                    .categoryName(category.getName())
-                    .categorySlug(category.getSlug())
-                    .categoryDescription(category.getDescription())
-                    .colorTheme(category.getColorTheme())
-                    .parentCategoryId(category.getParentCategoryId())
-                    .contentWarningType(category.getContentWarningType())
-                    .threadCount(threadCount.intValue())
-                    .isParent(category.isParent())
-                    .isChild(category.isChild())
-                    .build();
+            return mapResponseWithData(focusCategory, category, threadCount);
         });
     }
-
-    private String validateAndNormalizeSortBy(String sortBy) {
-        Set<String> allowedFields = Set.of("created_at", "category_name");
-        if(sortBy == null || !allowedFields.contains(sortBy)){
-            return "created_at";
+    /**
+     * Enriches a list of focus categories with category details and thread counts using batch fetching.
+     * Uses batch fetching to avoid N+1 queries.
+     */
+    private Mono<List<FocusCategoryResponse>> enrichFocusCategoriesWithBatchData(
+        List<FocusCategoryEntity> focusCategories
+    ){
+        if(focusCategories.isEmpty()){
+            return Mono.just(List.of());
         }
-        return sortBy;
+
+        List<UUID> categoryIds = focusCategories.stream()
+                .map(FocusCategoryEntity::getCategoryId)
+                .distinct()
+                .toList();
+
+        // Batch fetch category details
+        Mono<Map<UUID, CategoryEntity>> categoriesMap = categoryRepository
+                .findCategoriesByIds(categoryIds)
+                .collectMap(CategoryEntity::getId);
+
+        // Batch fetch thread counts
+        Mono<Map<UUID, Long>> threadCountMap = threadRepository
+                .findThreadCountsByCategoryIds(categoryIds)
+                .collectMap(ThreadCountRecord::category_id, ThreadCountRecord::count)
+                .defaultIfEmpty(new HashMap<>());
+
+        return Mono.zip(categoriesMap, threadCountMap)
+                .map(tuple -> {
+                    Map<UUID, CategoryEntity> categories = tuple.getT1();
+                    Map<UUID, Long> threadCounts = tuple.getT2();
+
+                    return focusCategories.stream()
+                            .map(focusCategory -> {
+                                CategoryEntity category = categories.get(focusCategory.getCategoryId());
+                                Long threadCount = threadCounts.getOrDefault(focusCategory.getCategoryId(), 0L);
+
+                                return mapResponseWithData(focusCategory, category, threadCount);
+                            })
+                            .toList();
+                });
+
+    }
+
+    private FocusCategoryResponse mapResponseWithData(
+            FocusCategoryEntity focusCategory,
+            CategoryEntity category,
+            Long threadCount
+    ){
+        return FocusCategoryResponse.builder()
+                .id(focusCategory.getId())
+                .notificationEnabled(focusCategory.getNotificationEnabled())
+                .focusedAt(focusCategory.getCreatedAt())
+                .categoryId(category.getId())
+                .categoryName(category.getName())
+                .categorySlug(category.getSlug())
+                .categoryDescription(category.getDescription())
+                .colorTheme(category.getColorTheme())
+                .parentCategoryId(category.getParentCategoryId())
+                .contentWarningType(category.getContentWarningType())
+                .threadCount(threadCount.intValue())
+                .isParent(category.isParent())
+                .isChild(category.isChild())
+                .build();
     }
 
 }

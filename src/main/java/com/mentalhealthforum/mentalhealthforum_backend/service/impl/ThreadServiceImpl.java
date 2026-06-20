@@ -8,6 +8,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchStatus
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.AddContentWarningRequest;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.threadLifecycleAndMetadata.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.ThreadSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.*;
@@ -151,8 +152,8 @@ public class ThreadServiceImpl implements ThreadService {
         String effectiveThreadStatus  = threadStatus != null? threadStatus.name() : null;
         String effectiveSearch = (search == null || search.trim().isEmpty())  ? null: search.trim();
 
-        String normalizedSortBy = validateAndNormalizeSortBy(sortBy);
-        String normalizedSortDirection = determineSortDirection(sortDirection, normalizedSortBy);
+        ThreadSortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String normalizedSortDirection = determineSortDirection(sortDirection, sortByField);
 
         Flux<ThreadEntity> theadsFlux = threadRepository.findAllPaginated(
                 categoryId,
@@ -162,7 +163,7 @@ public class ThreadServiceImpl implements ThreadService {
                 isDeleted, isFeatured, hasContentWarning,
                 currentUserId, isBookmarked, isWatched,
                 effectiveSearch,
-                normalizedSortBy, normalizedSortDirection, size, offset);
+                sortByField.getValue(), normalizedSortDirection, size, offset);
 
         Mono<Long> totalCount = threadRepository.countAllPaginated(
                 categoryId,
@@ -696,22 +697,16 @@ public class ThreadServiceImpl implements ThreadService {
 
     // ==================== PRIVATE HELPERS ====================
 
-    private String validateAndNormalizeSortBy(String sortBy){
-        Set<String> allowedFields = Set.of(
-                "created_at", "last_activity_at", "post_count", "view_count", "title"
-        );
-        if(sortBy == null || !allowedFields.contains(sortBy)){
-            return "last_activity_at"; // Default to most recent activity
-        }
-        return sortBy;
+    private ThreadSortField validateAndNormalizeSortBy(String sortBy){
+        return ThreadSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, String sortBy){
+    private String determineSortDirection(String sortDirection, ThreadSortField sortBy){
         if (sortDirection != null){
             return "desc".equalsIgnoreCase(sortDirection)? "DESC" : "ASC";
         }
         return switch (sortBy){
-            case "created_at", "last_activity_at", "post_count", "view_count" -> "DESC";
+            case CREATED_AT, LAST_ACTIVITY_AT, POST_COUNT, VIEW_COUNT -> "DESC";
             default -> "ASC"; // title
         };
     }

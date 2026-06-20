@@ -6,6 +6,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ModerationAction;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.TagSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
@@ -165,10 +166,15 @@ public class CategoryTagServiceImpl implements CategoryTagService {
 
         int offset = page * size;
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
-        String effectiveSortBy = validateAndNormalizeTagSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
 
-        return categoryTagRepository.searchTags(effectiveSearch, effectiveSortBy, effectiveSortDirection, size, offset)
+        TagSortField sortByField = validateAndNormalizeTagSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection, sortByField);
+
+        return categoryTagRepository.searchTags(
+                    effectiveSearch,
+                    sortByField.getValue(), effectiveSortDirection,
+                    size, offset
+                )
                 .collectList()
                 .flatMap(tags -> {
                     if(tags.isEmpty()){
@@ -179,17 +185,6 @@ public class CategoryTagServiceImpl implements CategoryTagService {
                             .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
 
                 });
-    }
-
-    private String determineSortDirection(String sortDirection, String sortBy) {
-        if(sortDirection != null){
-            return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
-        }
-
-        return switch (sortBy){
-            case "created_at", "usage" -> "DESC";
-            default -> "ASC";
-        };
     }
 
     // ==================== CATEGORY-TAG ASSIGNMENTS ====================
@@ -434,12 +429,19 @@ public class CategoryTagServiceImpl implements CategoryTagService {
         return categoryTagRepository.save(existingTag);
     }
 
-    private String validateAndNormalizeTagSortBy(String sortBy) {
-        Set<String> allowedFields = Set.of("name", "created_at", "usage");
-        if(sortBy == null || !allowedFields.contains(sortBy)){
-            return "name";
+    private TagSortField validateAndNormalizeTagSortBy(String sortBy) {
+       return TagSortField.fromString(sortBy);
+    }
+
+    private String determineSortDirection(String sortDirection, TagSortField sortBy) {
+        if(sortDirection != null){
+            return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
         }
-        return sortBy;
+
+        return switch (sortBy){
+            case CREATED_AT, USAGE -> "DESC";
+            default -> "ASC"; // Name
+        };
     }
 
     private Mono<Void> validateCategoryExists(UUID categoryId) {

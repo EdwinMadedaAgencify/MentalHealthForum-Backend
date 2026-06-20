@@ -6,6 +6,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ModerationAction;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.CategorySortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
@@ -470,8 +471,9 @@ public class CategoryServiceImpl implements CategoryService {
         int offset = page * size;
         UUID currentUserId = UUID.fromString(viewerContext.getUserId());
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
-        String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+
+        CategorySortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection);
         Boolean effectiveIsParent = (parentCategoryId != null && isParent != null) ? null : isParent;
 
         // User-friendly override: parent_category_id takes precedence
@@ -484,7 +486,7 @@ public class CategoryServiceImpl implements CategoryService {
                     tagId, parentCategoryId,
                     effectiveIsParent, isActive, isFocused,
                     effectiveSearch,
-                    effectiveSortBy, effectiveSortDirection,
+                    sortByField.getValue(), effectiveSortDirection,
                     size, offset
                 )
                 .collectList()
@@ -503,15 +505,11 @@ public class CategoryServiceImpl implements CategoryService {
 
     }
 
-    private String validateAndNormalizeSortBy(String sortBy) {
-        Set<String> allowedFields = Set.of("sort_order", "name", "created_at");
-        if(sortBy == null || !allowedFields.contains(sortBy)){
-            return "sort_order";
-        }
-        return sortBy;
+    private CategorySortField validateAndNormalizeSortBy(String sortBy) {
+       return CategorySortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, String effectiveSortBy) {
+    private String determineSortDirection(String sortDirection) {
         if(sortDirection != null){
             return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
         }

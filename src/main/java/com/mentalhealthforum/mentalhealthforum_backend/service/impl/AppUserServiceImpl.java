@@ -11,6 +11,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentit
 import com.mentalhealthforum.mentalhealthforum_backend.enums.InternalRole;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.OnboardingStage;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.VerificationType;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.AppUserSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.*;
 import com.mentalhealthforum.mentalhealthforum_backend.repository.AdminInvitationRepository;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
@@ -340,8 +341,8 @@ public class AppUserServiceImpl implements AppUserService {
         UUID currentUserId = viewerContext != null? UUID.fromString(viewerContext.getUserId()) : null;
         String[] effectiveGroups = (groups == null || groups.length == 0) ? null : groups;
         String effectiveSearch = (search == null || search.trim().isEmpty()) ? null: search.trim();
-        String normalizedSortBy = validateAndNormalizeSortBy(sortBy);
-        String normalizedDirection = determineSortDirection(sortDirection, normalizedSortBy);
+        AppUserSortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String normalizedDirection = determineSortDirection(sortDirection, sortByField);
 
         // Only apply current user first on page 0
         boolean applyCurrentUserFirst = currentUserFirst && page == 0;
@@ -351,7 +352,7 @@ public class AppUserServiceImpl implements AppUserService {
                 currentUserId, applyCurrentUserFirst,
                 isConnected,
                 effectiveSearch,
-                normalizedSortBy, normalizedDirection, size, offset
+                sortByField.getValue(), normalizedDirection, size, offset
         );
 
         Mono<Long> totalCount = appUserRepository.countAll(
@@ -376,22 +377,17 @@ public class AppUserServiceImpl implements AppUserService {
                 });
     }
 
-    private String validateAndNormalizeSortBy(String sortBy){
-        // Allowed sort fields
-        Set<String> allowedFields = Set.of("display_name","date_joined", "posts_count", "reputation_score", "last_posted_at", "last_active_at");
-        if(!allowedFields.contains(sortBy)){
-            return "display_name"; // Default to alphabetical
-        }
-        return sortBy;
+    private AppUserSortField validateAndNormalizeSortBy(String sortBy){
+        return AppUserSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, String sortBy){
+    private String determineSortDirection(String sortDirection, AppUserSortField sortBy){
         if(sortDirection != null){
             return "desc".equalsIgnoreCase(sortDirection)? "DESC": "ASC";
         }
         // Natural defaults based on field
         return switch (sortBy) {
-            case "date_joined", "posts_count", "reputation_score", "last_posted_at", "last_active_at" -> "DESC";
+            case DATE_JOINED, POST_COUNT, REPUTATION_SCORE, LAST_POSTED_AT, LAST_ACTIVITY_AT -> "DESC";
             default -> "ASC"; // display_name
         };
     }

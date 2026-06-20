@@ -1,5 +1,6 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.ThreadCountRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadEntity;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
@@ -9,6 +10,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Repository
@@ -280,4 +283,16 @@ public interface ThreadRepository extends R2dbcRepository<ThreadEntity, UUID> {
     @Query("UPDATE forum_threads SET last_activity_at = NOW() WHERE id = :threadId")
     Mono<Void> updateLastActivity(@Param("threadId") UUID threadId);
 
+
+    /**
+     * Batch fetch thread counts for categories
+     */
+    @Query("""
+        SELECT category_id, COUNT(*) as count
+        FROM forum_threads
+        WHERE category_id IN (:categoryIds)
+        AND is_deleted = false
+        GROUP BY category_id
+    """)
+    Flux<ThreadCountRecord> findThreadCountsByCategoryIds(List<UUID> categoryIds);
 }

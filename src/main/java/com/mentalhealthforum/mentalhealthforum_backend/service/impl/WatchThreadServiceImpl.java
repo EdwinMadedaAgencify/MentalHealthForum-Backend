@@ -10,6 +10,7 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.ContentWarningType;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadType;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.WatchThreadSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
@@ -109,15 +110,15 @@ public class WatchThreadServiceImpl implements WatchThreadService {
         String effectiveThreadType =  threadType != null? threadType.name() : null;
         String effectiveThreadStatus  = threadStatus != null? threadStatus.name() : null;
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
-        String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+        WatchThreadSortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection);
 
         return watchThreadRepository.findPaginatedByUserId(
                 userId,
                 categoryId, creatorId, effectiveThreadType, effectiveThreadStatus,
                 hasContentWarning, isBookmarked, notificationEnabled,
                 effectiveSearch,
-                effectiveSortBy, effectiveSortDirection,
+                sortByField.getValue(), effectiveSortDirection,
                 size, offset
                 )
                 .collectList()
@@ -177,15 +178,11 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                 .flatMap(watchThread -> watchThreadRepository.findWatchById(watchThread.getId(), userId));
     }
 
-    private String validateAndNormalizeSortBy(String sortBy) {
-        Set<String> allowedFields = Set.of("created_at", "last_activity_at", "thread_title", "post_count", "view_count");
-        if(sortBy == null || !allowedFields.contains(sortBy)){
-            return "created_at";
-        }
-        return sortBy;
+    private WatchThreadSortField validateAndNormalizeSortBy(String sortBy) {
+       return WatchThreadSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, String effectiveSortBy){
+    private String determineSortDirection(String sortDirection){
         if(sortDirection != null){
             return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
         }
