@@ -2,10 +2,13 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.postsRicherContentAndSafety.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
+import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.PostSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
+import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.PostEditHistoryEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.PostEntity;
@@ -23,10 +26,7 @@ import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -72,14 +72,14 @@ public class PostServiceImpl implements PostService {
                         .then(findActiveThread(request.getThreadId())))
                 .flatMap(thread -> validateParentPost(thread, request.getParentPostId()))
                 .flatMap(thread -> createAndSavePost(request, userId, thread.getId()))
-                .flatMap(this::mapToResponse)
+                .flatMap(this::enrichSinglePostWithData)
                 .as(transactionalOperator::transactional);
     }
 
     @Override
     public Mono<PostResponse> getPost(UUID postId, ViewerContext viewerContext) {
         return findPost(postId)
-                .flatMap(this::mapToResponse);
+                .flatMap(this::enrichSinglePostWithData);
     }
 
     @Override
@@ -154,7 +154,7 @@ public class PostServiceImpl implements PostService {
 
                     return postEditHistoryRepository.save(history)
                             .then(postRepository.save(post))
-                            .flatMap(this::mapToResponse);
+                            .flatMap(this::enrichSinglePostWithData);
                 },
                 null,
                 null
@@ -229,7 +229,7 @@ public class PostServiceImpl implements PostService {
 
                             return postEditHistoryRepository.save(history)
                                     .then(postRepository.save(post))
-                                    .flatMap(this::mapToResponse);
+                                    .flatMap(this::enrichSinglePostWithData);
                         },
                         List.of(
                                 new ValidationRule(
@@ -349,33 +349,43 @@ public class PostServiceImpl implements PostService {
 
         String effectivePostType = (postType == null) ? null : postType.name();
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
-        String effectiveSortBy = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, effectiveSortBy);
+        PostSortField sortByField = validateAndNormalizeSortBy(sortBy);
+        String effectiveSortDirection = determineSortDirection(sortDirection, sortByField);
+
+        // Note: flaggedForReview is not currently used as a filter in the service
 
         return postRepository.findPostsPaginated(
-                        threadId, authorId, false, parentPostId, effectivePostType, hasContentWarning,
-                        effectiveSearch, isDeleted, effectiveSortBy, effectiveSortDirection, size, offset)
-                .flatMap(this::mapToResponse)
+                        threadId, authorId, parentPostId,
+                        effectivePostType, hasContentWarning, isDeleted, false,
+                        effectiveSearch,
+                        sortByField.getValue(), effectiveSortDirection,
+                        size, offset)
                 .collectList()
-                .zipWith(postRepository.countPostsWithFilters(
-                        threadId, authorId, false, parentPostId, effectivePostType, hasContentWarning, effectiveSearch, isDeleted))
-                .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                .flatMap(posts -> {
+                    if(posts.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
+
+                    return enrichPostsWithBatchData(posts)
+                            .zipWith(postRepository.countPostsWithFilters(
+                                    threadId, authorId, parentPostId,
+                                    effectivePostType, hasContentWarning, isDeleted, false,
+                                    effectiveSearch))
+                            .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                });
+
     }
 
-    private String validateAndNormalizeSortBy(String sortBy) {
-        Set<String> allowedFields = Set.of("created_at", "updated_at");
-        if (sortBy == null || !allowedFields.contains(sortBy)) {
-            return "created_at";
-        }
-        return sortBy;
+    private PostSortField validateAndNormalizeSortBy(String sortBy) {
+      return PostSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, String sortBy) {
+    private String determineSortDirection(String sortDirection, PostSortField sortBy) {
         if (sortDirection != null) {
             return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
         }
         return switch (sortBy) {
-            case "updated_at" -> "DESC";
+            case UPDATED_AT -> "DESC";
             default -> "ASC";
         };
     }
@@ -427,31 +437,77 @@ public class PostServiceImpl implements PostService {
                 .as(transactionalOperator::transactional);
     }
 
-    private Mono<PostResponse> mapToResponse(PostEntity post) {
+    /**
+     * Enriches a single post with author details.
+     * Uses individual queries since only one post is being fetched.
+     */
+    private Mono<PostResponse> enrichSinglePostWithData(PostEntity post) {
         return appUserRepository.findAppUserByKeycloakId(post.getAuthorId().toString())
-                .switchIfEmpty(Mono.empty())
-                .map(author -> PostResponse.builder()
-                        .id(post.getId())
-                        .threadId(post.getThreadId())
-                        .parentPostId(post.getParentPostId())
-                        .authorId(post.getAuthorId())
-                        .authorDisplayName(author.getDisplayName())
-                        .authorAvatarUrl(author.getAvatarUrl())
-                        .anonymousIdentifier(post.getAnonymousIdentifier())
-                        .postType(post.getPostType())
-                        .content(post.getContent())
-                        .wordCount(post.getWordCount())
-                        .contentWarningType(post.getContentWarningType())
-                        .contentWarningCustomText(post.getContentWarningCustomText())
-                        .isFlaggedForReview(false)
-                        .isEdited(post.getIsEdited())
-                        .editReason(post.getEditReasonType())
-                        .editReasonCustomText(post.getEditReasonCustomText())
-                        .isAnonymous(post.getIsAnonymous())
-                        .isDeleted(post.getIsDeleted())
-                        .reactionCount(post.getReactionCount())
-                        .createdAt(post.getCreatedAt())
-                        .updatedAt(post.getUpdatedAt())
-                        .build());
+                .map(AppUserEntity::toUserDetails)
+                .map(author -> mapResponseWithData(post, author));
+    }
+
+    /**
+     * Enriches a list of posts with author details using batch fetching.
+     * Uses batch fetching to avoid N+1 queries.
+     */
+    private Mono<List<PostResponse>> enrichPostsWithBatchData(List<PostEntity> posts){
+        if(posts.isEmpty()){
+            return Mono.just(List.of());
+        }
+
+        List<UUID> authorIds = posts.stream()
+                .map(PostEntity::getAuthorId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // Batch fetch all authors
+        Mono<Map<UUID, UserDetails>> authorsMap = appUserRepository
+                .findAppUsersByKeycloakIds(authorIds)
+                .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails)
+                .defaultIfEmpty(new HashMap<>());
+
+        return authorsMap
+                .map(authors -> posts.stream()
+                            .map(post -> {
+                                UserDetails author = authors.get(post.getAuthorId());
+                                return mapResponseWithData(post, author);
+                            })
+                        .toList());
+
+    }
+
+    /**
+     * Builds a PostResponse from post and author data.
+     * Used by both single and batch enrichment flows.
+     */
+    private PostResponse mapResponseWithData(
+        PostEntity post,
+        UserDetails author
+    ) {
+        return PostResponse.builder()
+                .id(post.getId())
+                .threadId(post.getThreadId())
+                .parentPostId(post.getParentPostId())
+                .authorId(post.getAuthorId())
+                .authorDisplayName(author.getDisplayName())
+                .authorAvatarUrl(author.getAvatarUrl())
+                .anonymousIdentifier(post.getAnonymousIdentifier())
+                .postType(post.getPostType())
+                .content(post.getContent())
+                .wordCount(post.getWordCount())
+                .contentWarningType(post.getContentWarningType())
+                .contentWarningCustomText(post.getContentWarningCustomText())
+                .isFlaggedForReview(false)
+                .isEdited(post.getIsEdited())
+                .editReason(post.getEditReasonType())
+                .editReasonCustomText(post.getEditReasonCustomText())
+                .isAnonymous(post.getIsAnonymous())
+                .isDeleted(post.getIsDeleted())
+                .reactionCount(post.getReactionCount())
+                .createdAt(post.getCreatedAt())
+                .updatedAt(post.getUpdatedAt())
+                .build();
     }
 }

@@ -68,12 +68,12 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
     Flux<PostEntity> findPostsPaginated(
             @Param("threadId") UUID threadId,
             @Param("authorId") UUID authorId,
-            @Param("flaggedForReview") Boolean flaggedForReview,
             @Param("parentPostId") UUID parentPostId,
             @Param("postType") String postType,
             @Param("hasContentWarning") Boolean hasContentWarning,
-            @Param("search") String search,
             @Param("isDeleted") Boolean isDeleted,
+            @Param("flaggedForReview") Boolean flaggedForReview,
+            @Param("search") String search,
             @Param("sortBy") String sortBy,
             @Param("sortDirection") String sortDirection,
             @Param("limit") int limit,
@@ -98,12 +98,12 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
     Mono<Long> countPostsWithFilters(
             @Param("threadId") UUID threadId,
             @Param("authorId") UUID authorId,
-            @Param("flaggedForReview") Boolean flaggedForReview,
             @Param("parentPostId") UUID parentPostId,
             @Param("postType") String postType,
             @Param("hasContentWarning") Boolean hasContentWarning,
-            @Param("search") String search,
-            @Param("isDeleted") Boolean isDeleted
+            @Param("isDeleted") Boolean isDeleted,
+            @Param("flaggedForReview") Boolean flaggedForReview,
+            @Param("search") String search
     );
 
 
