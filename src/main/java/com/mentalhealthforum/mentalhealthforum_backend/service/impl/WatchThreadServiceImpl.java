@@ -6,6 +6,12 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.BookmarkSta
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadRecord;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.WatchThreadResponse;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.FilterMetadata;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.FilterOption;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.SortOption;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.WatchThreadFilterDto;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.CategoryTagWithCategoryId;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.threadLifecycleAndMetadata.ThreadResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ContentWarningType;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ThreadStatus;
@@ -14,11 +20,10 @@ import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.WatchThrea
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.InvalidPaginationException;
 import com.mentalhealthforum.mentalhealthforum_backend.model.AppUserEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.CategoryEntity;
+import com.mentalhealthforum.mentalhealthforum_backend.model.ThreadEntity;
 import com.mentalhealthforum.mentalhealthforum_backend.model.WatchThreadEntity;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.AppUserRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.ThreadBookmarkRepository;
-import com.mentalhealthforum.mentalhealthforum_backend.repository.WatchThreadRepository;
+import com.mentalhealthforum.mentalhealthforum_backend.repository.*;
 import com.mentalhealthforum.mentalhealthforum_backend.service.AppUserService;
 import com.mentalhealthforum.mentalhealthforum_backend.service.WatchThreadService;
 import org.slf4j.Logger;
@@ -39,6 +44,7 @@ public class WatchThreadServiceImpl implements WatchThreadService {
     private final WatchThreadRepository watchThreadRepository;
     private final ThreadRepository threadRepository;
     private final ThreadBookmarkRepository threadBookmarkRepository;
+    private final CategoryRepository categoryRepository;
     private final AppUserRepository appUserRepository;
     private final AppUserService appUserService;
 
@@ -47,12 +53,14 @@ public class WatchThreadServiceImpl implements WatchThreadService {
             WatchThreadRepository watchThreadRepository,
             ThreadRepository threadRepository,
             ThreadBookmarkRepository threadBookmarkRepository,
+            CategoryRepository categoryRepository,
             AppUserRepository appUserRepository,
             AppUserService appUserService) {
         this.transactionalOperator = transactionalOperator;
         this.watchThreadRepository = watchThreadRepository;
         this.threadRepository = threadRepository;
         this.threadBookmarkRepository = threadBookmarkRepository;
+        this.categoryRepository = categoryRepository;
         this.appUserRepository = appUserRepository;
         this.appUserService = appUserService;
     }
@@ -111,7 +119,7 @@ public class WatchThreadServiceImpl implements WatchThreadService {
         String effectiveThreadStatus  = threadStatus != null? threadStatus.name() : null;
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
         WatchThreadSortField sortByField = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection);
+        String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
 
         return watchThreadRepository.findPaginatedByUserId(
                 userId,
@@ -133,8 +141,13 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                                     hasContentWarning, isBookmarked, notificationEnabled,
                                     effectiveSearch)
                             )
-                            .map(tuple ->new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                            .map(tuple -> {
+                                EnrichedWatchThreadData enrichedData = tuple.getT1();
+                                long total = tuple.getT2();
+                                FilterMetadata<WatchThreadFilterDto> filters = buildWatchThreadFilter(enrichedData);
 
+                                return new PaginatedResponse<>(enrichedData.responses, page, size, total, filters);
+                            });
                 });
 
     }
@@ -182,13 +195,6 @@ public class WatchThreadServiceImpl implements WatchThreadService {
        return WatchThreadSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection){
-        if(sortDirection != null){
-            return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
-        }
-        return "DESC";
-    }
-
     /**
      * Enriches single watch thread.
      */
@@ -208,12 +214,17 @@ public class WatchThreadServiceImpl implements WatchThreadService {
      * Enriches a list of watched thread records with creator details using batch fetching.
      * Uses batch fetching to avoid N+1 queries.
      */
-    private Mono<List<WatchThreadResponse>> enrichWatchedThreadsWithBatchData(
+    private Mono<EnrichedWatchThreadData> enrichWatchedThreadsWithBatchData(
         List<WatchThreadRecord> records,
         UUID userId
     ){
         if(records.isEmpty()){
-            return Mono.just(List.of());
+            return Mono.just(new EnrichedWatchThreadData(
+                    List.of(),
+                    List.of(),
+                    Map.of(),
+                    Map.of()
+            ));
         }
 
         // Extract unique creator IDs
@@ -223,13 +234,26 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                 .distinct()
                 .toList();
 
-        // Batch fetch creator IDs
+        // Extract unique category IDs
+        List<UUID> categoryIds = records.stream()
+                .map(WatchThreadRecord::category_id)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // Batch fetch creator details
         Mono<Map<UUID, UserDetails>> creatorsMap = appUserRepository
                 .findAppUsersByKeycloakIds(creatorIds)
                 .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails)
                 .defaultIfEmpty(new HashMap<>());
 
-        // Batch fetch bookmark status (for each watched thread)\
+        // Batch fetch category details
+        Mono<Map<UUID, CategoryEntity>> categoriesMap = categoryRepository
+                .findCategoriesByIds(categoryIds)
+                .collectMap(CategoryEntity::getId)
+                .defaultIfEmpty(new HashMap<>());
+
+        // Batch fetch bookmark status (for each watched thread)
         List<UUID> threadIds = records.stream()
                 .map(WatchThreadRecord::thread_id)
                 .toList();
@@ -239,19 +263,27 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                 .collectMap(BookmarkStatusRecord::thread_id, BookmarkStatusRecord::is_bookmarked)
                 .defaultIfEmpty(new HashMap<>());
 
-        return Mono.zip(creatorsMap, bookmarkStatusMap)
+        return Mono.zip(creatorsMap, categoriesMap, bookmarkStatusMap)
                 .map(tuple -> {
                     Map<UUID, UserDetails> creators = tuple.getT1();
-                    Map<UUID, Boolean> bookmarkStatus = tuple.getT2();
+                    Map<UUID, CategoryEntity> categories = tuple.getT2();
+                    Map<UUID, Boolean> bookmarkStatus = tuple.getT3();
 
-                    return records.stream()
+                    List<WatchThreadResponse> responses = records.stream()
                             .map(record -> {
                                 UserDetails creator = creators.get(record.creator_id());
                                 Boolean isBookmarked = bookmarkStatus.getOrDefault(record.thread_id(), false);
 
                                 return mapResponseWithData(record, creator, isBookmarked);
                             })
-                            .collect(Collectors.toList());
+                            .toList();
+
+                    return new EnrichedWatchThreadData(
+                            responses,
+                            records,
+                            creators,
+                            categories
+                    );
                 });
     }
 
@@ -283,4 +315,80 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                 .isFeatured(record.is_featured())
                 .build();
     }
+
+    private record EnrichedWatchThreadData(
+            List<WatchThreadResponse> responses,
+            List<WatchThreadRecord> records,
+            Map<UUID, UserDetails> creators,
+            Map<UUID, CategoryEntity> categories
+    ) {}
+
+    /**
+     * Builds filter metadata from enriched watch thread data.
+     */
+    private FilterMetadata<WatchThreadFilterDto> buildWatchThreadFilter(EnrichedWatchThreadData data){
+        // Builder creator options
+        Map<UUID, Long> creatorCounts = data.records().stream()
+                .collect(Collectors.groupingBy(
+                        WatchThreadRecord::creator_id,
+                        Collectors.counting()
+                ));
+
+        List<FilterOption> creatorOptions = data.creators.entrySet().stream()
+                .map(entry -> {
+                    UUID creatorId = entry.getKey();
+                    UserDetails creator = entry.getValue();
+                    long count = creatorCounts.getOrDefault(creatorId, 0L);
+                    return new FilterOption(
+                            creatorId,
+                            creator.getDisplayName(),
+                            creatorId.toString(),
+                            creator.getAvatarUrl(),
+                            count
+                    );
+                })
+                .sorted(Comparator.comparing(FilterOption::getLabel))
+                .toList();
+
+        // Builder category options
+        Map<UUID, Long> categoryCounts = data.records().stream()
+                .collect(Collectors.groupingBy(
+                        WatchThreadRecord::category_id,
+                        Collectors.counting()
+                ));
+
+        List<FilterOption> categoryOptions = data.categories().entrySet().stream()
+                .map(entry -> {
+                    UUID categoryId = entry.getKey();
+                    CategoryEntity category = entry.getValue();
+                    long count = categoryCounts.getOrDefault(categoryId, 0L);
+                    return new FilterOption(
+                            categoryId,
+                            category.getName(),
+                            category.getSlug(),
+                            count
+                    );
+                })
+                .sorted(Comparator.comparing(FilterOption::getLabel))
+                .toList();
+
+        WatchThreadFilterDto watchThreadFilters = WatchThreadFilterDto.builder()
+                .creators(creatorOptions)
+                .categories(categoryOptions)
+                .build();
+
+        return FilterMetadata.<WatchThreadFilterDto>builder()
+                .filters(watchThreadFilters)
+                .sortOptions(getWatchThreadSortOptions())
+                .build();
+
+    }
+
+    private List<SortOption> getWatchThreadSortOptions() {
+        return Arrays.stream(
+                WatchThreadSortField.values())
+                .map(WatchThreadSortField::toSortOption)
+                .toList();
+    }
+
 }
