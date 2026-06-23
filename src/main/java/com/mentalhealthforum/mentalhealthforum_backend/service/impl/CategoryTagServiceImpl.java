@@ -3,6 +3,8 @@ package com.mentalhealthforum.mentalhealthforum_backend.service.impl;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.PaginatedResponse;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.UserDetails;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.FilterMetadata;
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.SortOption;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.forumCategoriesHierarchicalAndTagged.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ErrorCode;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.ModerationAction;
@@ -31,6 +33,7 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -168,7 +171,7 @@ public class CategoryTagServiceImpl implements CategoryTagService {
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
 
         TagSortField sortByField = validateAndNormalizeTagSortBy(sortBy);
-        String effectiveSortDirection = determineSortDirection(sortDirection, sortByField);
+        String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
 
         return categoryTagRepository.searchTags(
                     effectiveSearch,
@@ -182,7 +185,16 @@ public class CategoryTagServiceImpl implements CategoryTagService {
                     }
                     return enrichTagsWithBatchData(tags)
                             .zipWith(categoryTagRepository.countSearchTags(effectiveSearch))
-                            .map(tuple -> new PaginatedResponse<>(tuple.getT1(), page, size, tuple.getT2()));
+                            .map(tuple -> {
+                                List<CategoryTagResponse> content = tuple.getT1();
+                                long total = tuple.getT2();
+
+                                FilterMetadata<Object> filters = FilterMetadata.builder()
+                                        .sortOptions(getTagSortOptions())
+                                        .build();
+
+                                return new PaginatedResponse<>(content, page, size, total, filters);
+                            });
 
                 });
     }
@@ -433,16 +445,6 @@ public class CategoryTagServiceImpl implements CategoryTagService {
        return TagSortField.fromString(sortBy);
     }
 
-    private String determineSortDirection(String sortDirection, TagSortField sortBy) {
-        if(sortDirection != null){
-            return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
-        }
-
-        return switch (sortBy){
-            case CREATED_AT, USAGE -> "DESC";
-            default -> "ASC"; // Name
-        };
-    }
 
     private Mono<Void> validateCategoryExists(UUID categoryId) {
         return categoryRepository.findById(categoryId)
@@ -623,6 +625,12 @@ public class CategoryTagServiceImpl implements CategoryTagService {
                 .createdAt(tag.getCreatedAt())
                 .updatedAt(tag.getUpdatedAt())
                 .build();
+    }
+
+    private List<SortOption> getTagSortOptions() {
+        return Arrays.stream(TagSortField.values())
+                .map(TagSortField::toSortOption)
+                .collect(Collectors.toList());
     }
 
 }

@@ -1,17 +1,22 @@
 package com.mentalhealthforum.mentalhealthforum_backend.enums.listings;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.SortOption;
 import lombok.Getter;
 
 @Getter
 public enum TagSortField {
-    NAME("name"),
-    CREATED_AT("created_at"),
-    USAGE("usage");
+    NAME("name", "name", "ASC"),
+    CREATED_AT("created_at", "created at", "DESC"),
+    USAGE("usage", "usage", "DESC");
 
     private final String value;
+    private final String label;
+    private final String defaultDirection;
 
-    TagSortField(String value) {
+    TagSortField(String value, String label, String defaultDirection) {
         this.value = value;
+        this.label = label;
+        this.defaultDirection = defaultDirection;
     }
 
     public static TagSortField fromString(String value){
@@ -24,5 +29,20 @@ public enum TagSortField {
             }
         }
         return NAME;
+    }
+
+    public String determineSortDirection(String sortDirection){
+        if(sortDirection != null){
+            return "desc".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
+        }
+        return this.defaultDirection;
+    }
+
+    public SortOption toSortOption(){
+        return SortOption.builder()
+                .value(this.value)
+                .label(this.label)
+                .defaultDirection(this.defaultDirection)
+                .build();
     }
 }
