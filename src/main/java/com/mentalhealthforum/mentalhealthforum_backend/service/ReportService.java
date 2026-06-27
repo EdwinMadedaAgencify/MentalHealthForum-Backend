@@ -50,6 +50,7 @@ public interface ReportService {
             ReportCategory category,
             Severity severity,
             UUID assignedTo,
+            UUID reviewedBy,
             String search,
             String sortBy,
             String sortDirection,

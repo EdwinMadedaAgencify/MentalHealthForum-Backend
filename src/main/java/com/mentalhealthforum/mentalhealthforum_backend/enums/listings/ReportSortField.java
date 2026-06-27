@@ -3,6 +3,9 @@ package com.mentalhealthforum.mentalhealthforum_backend.enums.listings;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.SortOption;
 import lombok.Getter;
 
+import java.util.Arrays;
+import java.util.List;
+
 @Getter
 public enum ReportSortField {
     SEVERITY("severity", "severity", "ASC"),
@@ -38,12 +41,22 @@ public enum ReportSortField {
         return this.defaultDirection;
     }
 
-    public SortOption toSortOption(){
+    private SortOption toSortOption(){
         return SortOption.builder()
                 .value(this.value)
                 .label(this.label)
                 .defaultDirection(this.defaultDirection)
                 .build();
+    }
+
+    public static List<SortOption> getOwnReportsSortOptions(){
+        return List.of(SEVERITY.toSortOption(), REPORTED_AT.toSortOption());
+    }
+
+    public static List<SortOption> getAllReportsSortOptions(){
+        return Arrays.stream(ReportSortField.values())
+                .map(ReportSortField::toSortOption)
+                .toList();
     }
 
 }

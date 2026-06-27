@@ -12,7 +12,6 @@ import com.mentalhealthforum.mentalhealthforum_backend.service.JwtClaimsExtracto
 import com.mentalhealthforum.mentalhealthforum_backend.service.ReportService;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -52,13 +51,14 @@ public class ModeratorContentReportController {
             @RequestParam(required = false) ReportCategory category,
             @RequestParam(required = false) Severity severity,
             @RequestParam(required = false, name = "assigned_to") UUID assignedTo,
+            @RequestParam(required = false, name = "reviewed_by") UUID reviewedBy,
             @RequestParam(defaultValue = "", name = "search") @Parameter(description = "Search by reason or details") String search,
             @RequestParam(defaultValue = "reported_at", name = "sort_by") @Parameter(description = "Sort by: severity, last_modified_at, reported_at") String sortBy,
             @RequestParam(required = false, name = "sort_direction") @Parameter(description = "Sort direction: asc or desc") String sortDirection
     ){
 
         ViewerContext viewerContext = jwtClaimsExtractor.extractViewerContext(jwt);
-        return reportService.getAllReports(page, size, reporterId, reportedUserId, threadId, postId, targetType, status, category, severity, assignedTo, search, sortBy, sortDirection, viewerContext)
+        return reportService.getAllReports(page, size, reporterId, reportedUserId, threadId, postId, targetType, status, category, severity, assignedTo, reviewedBy, search, sortBy, sortDirection, viewerContext)
                 .map(reports->
                         ResponseEntity.ok(new StandardSuccessResponse<>("Content reports retrieved successfully", reports)));
     }

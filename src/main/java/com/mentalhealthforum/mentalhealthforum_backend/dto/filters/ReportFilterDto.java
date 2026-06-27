@@ -12,5 +12,6 @@ public class ReportFilterDto {
     private List<FilterOption> reportedUsers;
     private List<FilterOption> threads;
     private List<FilterOption> assignedTo;
+    private List<FilterOption> reviewers;
     private List<FilterOption> reportStatus;
 }

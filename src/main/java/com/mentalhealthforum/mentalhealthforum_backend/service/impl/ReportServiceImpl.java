@@ -8,7 +8,6 @@ import com.mentalhealthforum.mentalhealthforum_backend.dto.userProfileAndIdentit
 import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.FilterMetadata;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.FilterOption;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.ReportFilterDto;
-import com.mentalhealthforum.mentalhealthforum_backend.dto.filters.SortOption;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.*;
 import com.mentalhealthforum.mentalhealthforum_backend.enums.listings.ReportSortField;
 import com.mentalhealthforum.mentalhealthforum_backend.exception.error.ApiException;
@@ -72,6 +71,12 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public Mono<ReportResponse> createThreadReport(CreateThreadReportRequest request, ViewerContext viewerContext) {
 
+        // TODO: Future feature - Add moderator reporting validations
+        // 1. validateNotSelfReport(request, viewerContext)
+        // 2. validateAndEscalateModeratorReport(request, viewerContext)
+        // 3. validateModeratorReportingModerator(request, viewerContext)
+        // See: Feature branch 'moderator-report-handling'
+
         UUID reporterId = UUID.fromString(viewerContext.getUserId());
         // Validate target exists
         return validateThreadExists(request.getThreadId())
@@ -89,6 +94,13 @@ public class ReportServiceImpl implements ReportService {
     public Mono<ReportResponse> createPostReport(CreatePostReportRequest request, ViewerContext viewerContext) {
 
         UUID reporterId = UUID.fromString(viewerContext.getUserId());
+        // TODO: Future feature - Add moderator reporting validations
+        // 1. validateNotSelfReport(request, viewerContext)
+        // 2. validateAndEscalateModeratorReport(request, viewerContext)
+        // 3. validateModeratorReportingModerator(request, viewerContext)
+        // See: Feature branch 'moderator-report-handling'
+
+
         // Validate target exists
         return validateAndCreatePostReport(reporterId, request)
                 .flatMap(this::enrichSingleReportWithData)
@@ -99,6 +111,12 @@ public class ReportServiceImpl implements ReportService {
     public Mono<ReportResponse> createUserReport(CreateUserReportRequest request, ViewerContext viewerContext) {
 
         UUID reporterId = UUID.fromString(viewerContext.getUserId());
+        // TODO: Future feature - Add moderator reporting validations
+        // 1. validateNotSelfReport(request, viewerContext)
+        // 2. validateAndEscalateModeratorReport(request, viewerContext)
+        // 3. validateModeratorReportingModerator(request, viewerContext)
+        // See: Feature branch 'moderator-report-handling'
+
         // Validate target exists
         return validateUserExists(request.getReportedUserId())
                 .then(validateNotDuplicateReport(reporterId, null, null, request.getReportedUserId()))
@@ -121,10 +139,51 @@ public class ReportServiceImpl implements ReportService {
             ViewerContext viewerContext
     ) {
 
-        UUID userId = UUID.fromString(viewerContext.getUserId());
+        if(page < 0 || size <= 0){
+            throw new InvalidPaginationException();
+        }
 
-       return getReportsWithFilters(page, size, userId, null, null, null, targetType,
-               status, category, null, null, search, sortBy, sortDirection);
+        int offset = page * size;
+
+        UUID userId = UUID.fromString(viewerContext.getUserId());
+        String targetTypeStr = targetType != null? targetType.name() : null;
+        String statusStr = status != null ? status.name() : null;
+        String categoryStr = category != null ? category.name() : null;
+        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
+
+        ReportSortField sortByField = ReportSortField.fromString(sortBy);
+        String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
+
+        return contentReportRepository.findOwnReportsPaginated(
+                        userId, targetTypeStr,
+                        statusStr, categoryStr, effectiveSearch,
+                        sortByField.getValue(), effectiveSortDirection, size, offset
+                )
+                .collectList()
+                .zipWith(contentReportRepository.countOwnReportsWithFilters(
+                        userId, targetTypeStr,
+                        statusStr, categoryStr, effectiveSearch
+                ))
+                .flatMap(tuple -> {
+                    List<ContentReportEntity> reports = tuple.getT1();
+                    long total = tuple.getT2();
+
+                    if(reports.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
+
+                    return enrichReportsWithBatchData(reports)
+                            .map(enrichedReports -> {
+
+                                FilterMetadata<ReportFilterDto> filters = FilterMetadata.<ReportFilterDto>builder()
+                                        .filters(null)
+                                        .sortOptions(ReportSortField.getOwnReportsSortOptions())
+                                        .build();
+                                return  new PaginatedResponse<>(enrichedReports.responses, page, size, total, filters);
+
+                            });
+                });
+
     }
 
     // ==================== MODERATOR ACTIONS ====================
@@ -142,6 +201,7 @@ public class ReportServiceImpl implements ReportService {
             ReportCategory category,
             Severity severity,
             UUID assignedTo,
+            UUID reviewedBy,
             String search,
             String sortBy,
             String sortDirection,
@@ -151,8 +211,47 @@ public class ReportServiceImpl implements ReportService {
             return Mono.error(new ApiException("Only moderators can view all reports", ErrorCode.FORBIDDEN));
         }
 
-        return getReportsWithFilters(page, size, reporterId, reportedUserId, threadId, postId, targetType,
-                status, category, severity, assignedTo, search, sortBy, sortDirection);
+        if(page < 0 || size <= 0){
+            throw new InvalidPaginationException();
+        }
+
+        int offset = page * size;
+
+        String targetTypeStr = targetType != null? targetType.name() : null;
+        String statusStr = status != null ? status.name() : null;
+        String categoryStr = category != null ? category.name() : null;
+        String severityStr = severity != null ? severity.name() : null;
+        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
+
+        ReportSortField sortByField = ReportSortField.fromString(sortBy);
+        String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
+
+        return contentReportRepository.findAllReportsPaginated(
+                        reporterId, reportedUserId, threadId, postId, targetTypeStr,
+                        statusStr, categoryStr, severityStr, assignedTo,reviewedBy, effectiveSearch,
+                        sortByField.getValue(), effectiveSortDirection, size, offset
+                )
+                .collectList()
+                .zipWith(contentReportRepository.countAllReportsWithFilters(
+                        reporterId, reportedUserId, threadId, postId, targetTypeStr,
+                        statusStr, categoryStr, severityStr, assignedTo, reviewedBy, effectiveSearch
+                ))
+                .flatMap(tuple -> {
+                    List<ContentReportEntity> reports = tuple.getT1();
+                    long total = tuple.getT2();
+
+                    if(reports.isEmpty()){
+                        return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
+                    }
+
+                    return enrichReportsWithBatchData(reports)
+                            .map(enrichedReports -> {
+
+                                FilterMetadata<ReportFilterDto> filters = buildReportFilters(enrichedReports);
+                                return  new PaginatedResponse<>(enrichedReports.responses, page, size, total, filters);
+
+                            });
+                });
 
     }
 
@@ -172,6 +271,8 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public Mono<ReportResponse> assignReport(UUID reportId, UUID moderatorId, ViewerContext viewerContext) {
+        // TODO: Future feature - Add moderator-specific validation
+        // See: Feature branch 'moderator-report-handling'
 
         UUID requestingUserId = UUID.fromString(viewerContext.getUserId());
         boolean isAdmin = viewerContext.isAdmin();
@@ -486,6 +587,10 @@ public class ReportServiceImpl implements ReportService {
 
         return findReport(reportId)
                 .flatMap(report -> {
+                    // TODO: Future feature - Restrict moderator actions on moderator reports
+                    // If report.reportedUserId is a moderator, only admins can act
+                    // See: Feature branch 'moderator-report-handling'
+
                     for(ValidationRule rule: validators){
                         // Condition is FAILURE condition - if true, we error
                         if(rule.condition().test(report)){
@@ -531,6 +636,8 @@ public class ReportServiceImpl implements ReportService {
         return postRepository.findByIdAndIsDeletedFalse(request.getPostId())
                 .switchIfEmpty(Mono.error(new ApiException("Post not found", ErrorCode.RESOURCE_NOT_FOUND)))
                 .flatMap(post ->
+                        // TODO: Future feature - Add moderator reporting validations here too
+                        // validateReportTarget(request, viewerContext) will be called from the caller
                         validateNotDuplicateReport(reporterId, null, request.getPostId(), null)
                                 .then(createPostReportEntity(reporterId, request, post))
                 );
@@ -543,17 +650,21 @@ public class ReportServiceImpl implements ReportService {
     }
 
     private Mono<Void> validateNotDuplicateReport(UUID reporterId, UUID threadId, UUID postId, UUID reportedUserId) {
-        return contentReportRepository.hasUserReportedTarget(
+        return contentReportRepository.findActiveReportForTarget(
                 reporterId,
                 postId,
                 threadId,
                 reportedUserId)
-                .flatMap(exists -> {
-                    if(exists){
-                        return Mono.error(new ApiException("You have already reported this content", ErrorCode.VALIDATION_FAILED));
-                    }
-                    return Mono.empty();
-                });
+                .flatMap(report -> {
+                    String message = switch(report.getStatus()){
+                        case PENDING -> "You have already reported this content. It is pending review";
+                        case UNDER_REVIEW -> "You have already reported this content. It is currently being reviewed by a moderator.";
+                        default -> "You have already reported this content.";
+                    };
+
+                        return Mono.error(new ApiException(message, ErrorCode.VALIDATION_FAILED));
+                })
+                .then();
     }
 
     private Mono<ContentReportEntity> createThreadReportEntity(UUID reporterId, CreateThreadReportRequest request, UUID targetUserId) {
@@ -662,71 +773,6 @@ public class ReportServiceImpl implements ReportService {
                         .exampleMessage(template.getExampleMessage())
                 .build());
     }
-
-    private Mono<PaginatedResponse<ReportResponse>> getReportsWithFilters(
-            int page,
-            int size,
-            UUID reporterId,
-            UUID reportedUserId,
-            UUID threadId,
-            UUID postId,
-            ReportTargetType targetType,
-            ReportStatus status,
-            ReportCategory category,
-            Severity severity,
-            UUID assignedTo,
-            String search,
-            String sortBy,
-            String sortDirection) {
-
-        if(page < 0 || size <= 0){
-            throw new InvalidPaginationException();
-        }
-
-        int offset = page * size;
-
-        String targetTypeStr = targetType != null? targetType.name() : null;
-        String statusStr = status != null ? status.name() : null;
-        String categoryStr = category != null ? category.name() : null;
-        String severityStr = severity != null ? severity.name() : null;
-        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
-
-        ReportSortField sortByField = validateAndNormalizeSortBy(sortBy);
-        String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
-
-        return contentReportRepository.findAllReportsPaginated(
-                        reporterId, reportedUserId, threadId, postId, targetTypeStr,
-                        statusStr, categoryStr, severityStr, assignedTo, effectiveSearch,
-                        sortByField.getValue(), effectiveSortDirection, size, offset
-                )
-                .collectList()
-                .zipWith(contentReportRepository.countAllReportsWithFilters(
-                        reporterId, reportedUserId, threadId, postId, targetTypeStr,
-                        statusStr, categoryStr, severityStr, assignedTo, effectiveSearch
-                ))
-                .flatMap(tuple -> {
-                   List<ContentReportEntity> reports = tuple.getT1();
-                   long total = tuple.getT2();
-
-                   if(reports.isEmpty()){
-                       return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
-                   }
-
-                   return enrichReportsWithBatchData(reports)
-                           .map(enrichedReports -> {
-
-                               FilterMetadata<ReportFilterDto> filters = buildReportFilters(enrichedReports);
-                               return  new PaginatedResponse<>(enrichedReports.responses, page, size, total, filters);
-
-                           });
-                });
-
-    }
-
-    private ReportSortField validateAndNormalizeSortBy(String sortBy) {
-        return ReportSortField.fromString(sortBy);
-    }
-
 
     private Mono<UserReportHistoryResponse> getUserReportHistoryInternal(UUID userId){
         return userReportHistoryRepository.findByUserId(userId)
@@ -850,6 +896,7 @@ public class ReportServiceImpl implements ReportService {
                    Map.of(),
                    Map.of(),
                    Map.of(),
+                   Map.of(),
                    Map.of()
             ));
         }
@@ -886,27 +933,37 @@ public class ReportServiceImpl implements ReportService {
                 .toList();
 
         // Batch fetch reporters
-        Mono<Map<UUID, UserDetails>> reportersMap = appUserRepository
+        Mono<Map<UUID, UserDetails>> reportersMap = reporterIds.isEmpty()
+                ? Mono.just(Map.of())
+                : appUserRepository
                 .findAppUsersByKeycloakIds(reporterIds)
                 .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails);
 
         // Batch fetch reported users
-        Mono<Map<UUID, UserDetails>> reportedUserMap = appUserRepository
+        Mono<Map<UUID, UserDetails>> reportedUserMap = reportedUserIds.isEmpty()
+                ? Mono.just(Map.of())
+                : appUserRepository
                 .findAppUsersByKeycloakIds(reportedUserIds)
                 .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails);
 
         // Batch fetch threads
-        Mono<Map<UUID, ThreadDetails>> threadsMap = threadRepository
+        Mono<Map<UUID, ThreadDetails>> threadsMap = threadIds.isEmpty()
+                ? Mono.just(Map.of())
+                : threadRepository
                 .findThreadsByIds(threadIds)
                 .collectMap(ThreadEntity::getId, ThreadEntity::toThreadDetails);
 
         // Batch fetch assigned moderators
-        Mono<Map<UUID, UserDetails>> assignedModeratorsMap = appUserRepository
+        Mono<Map<UUID, UserDetails>> assignedModeratorsMap = assignedModeratorIds.isEmpty()
+                ? Mono.just(Map.of())
+                : appUserRepository
                 .findAppUsersByKeycloakIds(assignedModeratorIds)
                 .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails);
 
         // Batch fetch reviewers
-        Mono<Map<UUID, UserDetails>> reviewersMap = appUserRepository
+        Mono<Map<UUID, UserDetails>> reviewersMap = reviewerIds.isEmpty()
+                ? Mono.just(Map.of())
+                : appUserRepository
                 .findAppUsersByKeycloakIds(reviewerIds)
                 .collectMap(AppUserEntity::getKeycloakId, AppUserEntity::toUserDetails);
 
@@ -926,11 +983,27 @@ public class ReportServiceImpl implements ReportService {
             List<ReportResponse> responses = reports.stream()
                     .map(report -> mapToTypedResponseWithData(
                             report,
-                            reporters.getOrDefault(report.getReporterId(), AppUserEntity.defaultUser()),
-                            reportedUsers.getOrDefault(report.getReportedUserId(), AppUserEntity.defaultUser()),
-                            threads.getOrDefault(report.getThreadId(), ThreadEntity.defaultThread()),
-                            assignedModerators.getOrDefault(report.getAssignedModeratorId(), AppUserEntity.defaultUser()),
-                            reviewers.getOrDefault(report.getReviewedBy(), AppUserEntity.defaultUser())
+
+                            report.getReporterId() != null
+                                ? reporters.getOrDefault(report.getReporterId(), AppUserEntity.defaultUser())
+                                : AppUserEntity.defaultUser(),
+
+                            report.getReportedUserId() != null
+                                ? reportedUsers.getOrDefault(report.getReportedUserId(), AppUserEntity.defaultUser())
+                                : AppUserEntity.defaultUser(),
+
+                            report.getThreadId() != null
+                                ? threads.getOrDefault(report.getThreadId(), ThreadEntity.defaultThread())
+                                : ThreadEntity.defaultThread(),
+
+                            report.getAssignedModeratorId() != null
+                                ? assignedModerators.getOrDefault(report.getAssignedModeratorId(), AppUserEntity.defaultUser())
+                                : AppUserEntity.defaultUser(),
+
+                            report.getReviewedBy()  != null
+                                ? reviewers.getOrDefault(report.getReviewedBy(), AppUserEntity.defaultUser())
+                                : AppUserEntity.defaultUser()
+
                     ))
                     .toList();
 
@@ -940,7 +1013,8 @@ public class ReportServiceImpl implements ReportService {
                     reporters,
                     reportedUsers,
                     threads,
-                    assignedModerators
+                    assignedModerators,
+                    reviewers
             );
 
         });
@@ -1112,7 +1186,8 @@ public class ReportServiceImpl implements ReportService {
             Map<UUID, UserDetails> reporters,
             Map<UUID, UserDetails> reportedUsers,
             Map<UUID, ThreadDetails> threads,
-            Map<UUID, UserDetails> assignedModerators
+            Map<UUID, UserDetails> assignedModerators,
+            Map<UUID, UserDetails> reviewers
     ){}
 
     private FilterMetadata<ReportFilterDto> buildReportFilters(EnrichedReportData data){
@@ -1212,6 +1287,30 @@ public class ReportServiceImpl implements ReportService {
                 .sorted(Comparator.comparing(FilterOption::getLabel))
                 .toList();
 
+        // Build reviewer options
+        Map<UUID, Long> reviewerCounts = data.reports().stream()
+                .filter(report -> report.getReviewedBy() != null)
+                .collect(Collectors.groupingBy(
+                        ContentReportEntity::getReviewedBy,
+                        Collectors.counting()
+                ));
+
+        List<FilterOption> reviewerOptions = data.reviewers().entrySet().stream()
+                .map(entry -> {
+                    UUID reviewerId = entry.getKey();
+                    UserDetails reviewer = entry.getValue();
+                    long count = reviewerCounts.getOrDefault(reviewerId, 0L);
+                    return new FilterOption(
+                            reviewerId,
+                            reviewer.getDisplayName(),
+                            reviewerId.toString(),
+                            reviewer.getAvatarUrl(),
+                            count
+                    );
+                })
+                .sorted(Comparator.comparing(FilterOption::getLabel))
+                .toList();
+
 
         // Build status options
         Map<ReportStatus, Long> statusCounts = data.reports().stream()
@@ -1236,20 +1335,15 @@ public class ReportServiceImpl implements ReportService {
                 .reportedUsers(reportedUserOptions)
                 .threads(threadOptions)
                 .assignedTo(assignedModeratorOptions)
+                .reviewers(reviewerOptions)
                 .reportStatus(statusOptions)
                 .build();
 
         return FilterMetadata.<ReportFilterDto>builder()
                 .filters(reportFilters)
-                .sortOptions(getReportSortOptions())
+                .sortOptions(ReportSortField.getAllReportsSortOptions())
                 .build();
 
-    }
-
-    private List<SortOption> getReportSortOptions() {
-        return Arrays.stream(ReportSortField.values())
-                .map(ReportSortField::toSortOption)
-                .toList();
     }
 
 }

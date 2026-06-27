@@ -31,6 +31,17 @@ public interface UserModerationService {
     // Location: ThreadLockExpiryScheduler (currently separate)
     // - Consolidate with other expiry jobs for consistency
 
+    // TODO: ARCHITECTURAL DEBT (Moderation Side Effects Lifecycle):
+// 1. CIRCULAR DEPENDENCY: Remove ContentReportRepository from this service entirely.
+//    Validation of relatedReportId should be pushed upward to a dedicated
+//    ReportWorkflowOrchestrator to prevent a tight cyclical loop between
+//    ReportService -> UserModerationService -> ContentReportRepository -> ReportService.
+//
+// 2. R2DBC UPDATE TRAP: In the banUser() and unbanUser() methods, verify if appUserRepository.save()
+//    is throwing a Duplicate Key Exception. Since KeycloakId is a custom string identifier,
+//    R2DBC might mistake updates for new INSERTs. If it breaks, migrate the account
+//    activation/deactivation to an explicit native @Query("UPDATE...") inside AppUserRepository.
+
     // ==================== WARNINGS ====================
     Mono<UserWarningResponse> warnUser(UUID userId, WarnUserRequest request, ViewerContext viewerContext);
 
