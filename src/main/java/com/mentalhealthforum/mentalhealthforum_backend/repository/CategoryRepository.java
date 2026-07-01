@@ -90,10 +90,17 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
             AND (:isParent IS NULL OR
                     (:isParent = true AND c.parent_category_id IS NULL) OR
                     (:isParent = false AND c.parent_category_id IS NOT NULL))
-            AND (:search IS NULL OR
-                    LOWER(c.name) LIKE '%' || LOWER(:search) || '%' OR
-                    LOWER(c.slug) LIKE '%' || LOWER(:search) || '%' OR
-                    LOWER(c.description) LIKE '%' || LOWER(:search) || '%')
+
+            -- Search: FTS + Trigram (User existing GIN index)
+            AND (:search IS NULL
+    
+                OR to_tsvector('public.english_unaccent', coalesce(c.name, '') || ' ' || coalesce(c.description, ''))
+                    @@ websearch_to_tsquery('public.english_unaccent', :search)
+
+                OR public.unaccent_immutable(c.name) % public.unaccent_immutable(:search)
+                OR public.unaccent_immutable(c.description) % public.unaccent_immutable(:search)
+            )
+    
             AND (:isActive IS NULL OR c.is_active = :isActive)
     
             -- Tag filter using centralised tags
@@ -158,10 +165,16 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
         AND (:isParent IS NULL OR
                 (:isParent = true AND c.parent_category_id IS NULL) OR
                 (:isParent = false AND c.parent_category_id IS NOT NULL))
-        AND (:search IS NULL OR
-                LOWER(c.name) LIKE '%' || LOWER(:search) || '%' OR
-                LOWER(c.slug) LIKE '%' || LOWER(:search) || '%' OR
-                LOWER(c.description) LIKE '%' || LOWER(:search) || '%')
+
+        AND (:search IS NULL
+
+            OR to_tsvector('public.english_unaccent', coalesce(c.name, '') || ' ' || coalesce(c.description, ''))
+                @@ websearch_to_tsquery('public.english_unaccent', :search)
+
+            OR public.unaccent_immutable(c.name) % public.unaccent_immutable(:search)
+            OR public.unaccent_immutable(c.description) % public.unaccent_immutable(:search)
+        )
+
         AND (:isActive IS NULL OR c.is_active = :isActive)
     
         -- Tag filter using centralised tags
