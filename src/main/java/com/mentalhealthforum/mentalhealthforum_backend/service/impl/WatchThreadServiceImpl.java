@@ -104,13 +104,17 @@ public class WatchThreadServiceImpl implements WatchThreadService {
             String sortDirection,
             ViewerContext viewerContext
     ){
-        UUID userId = UUID.fromString(viewerContext.getUserId());
 
         if(page < 0 || size <= 0){
             throw new InvalidPaginationException();
         }
 
         int offset = page * size;
+
+        UUID viewerId = UUID.fromString(viewerContext.getUserId());
+        boolean isAdmin = viewerContext.isAdmin();
+        boolean isModeratorOrAdmin = viewerContext.isModeratorOrAdmin();
+        boolean isVerified = viewerContext.isVerified();
 
         String effectiveThreadType =  threadType != null? threadType.name() : null;
         String effectiveThreadStatus  = threadStatus != null? threadStatus.name() : null;
@@ -119,7 +123,8 @@ public class WatchThreadServiceImpl implements WatchThreadService {
         String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
 
         return watchThreadRepository.findPaginatedByUserId(
-                userId,
+                viewerId,
+                isAdmin, isModeratorOrAdmin, isVerified,
                 categoryId, creatorId, effectiveThreadType, effectiveThreadStatus,
                 hasContentWarning, isBookmarked, notificationEnabled,
                 effectiveSearch,
@@ -131,9 +136,10 @@ public class WatchThreadServiceImpl implements WatchThreadService {
                     if(records.isEmpty()){
                         return Mono.just(new PaginatedResponse<>(List.of(), page, size, 0L));
                     }
-                    return enrichWatchedThreadsWithBatchData(records, userId)
+                    return enrichWatchedThreadsWithBatchData(records, viewerId)
                             .zipWith(watchThreadRepository.countByUserIdWithFilters(
-                                    userId,
+                                    viewerId,
+                                    isAdmin, isModeratorOrAdmin, isVerified,
                                     categoryId, creatorId, effectiveThreadType, effectiveThreadStatus,
                                     hasContentWarning, isBookmarked, notificationEnabled,
                                     effectiveSearch)

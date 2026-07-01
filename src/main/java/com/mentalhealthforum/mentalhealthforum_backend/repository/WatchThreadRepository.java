@@ -79,10 +79,29 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
                t.is_featured
         FROM watch_threads wt
         INNER JOIN forum_threads t ON wt.thread_id = t.id
-        WHERE wt.user_id = :userId
+        INNER JOIN forum_categories c ON t.category_id = c.id
+        WHERE wt.user_id = :viewerId
             AND t.is_deleted = false
-            AND (:search IS NULL OR
-                 LOWER(t.title) LIKE '%' || LOWER(:search) || '%')
+
+            --Search: Hybrid: FTS + Trigram
+            AND (:search IS NULL
+                    OR to_tsvector('public.english_unaccent', coalesce(t.title, ''))
+                        @@ websearch_to_tsquery('public.english_unaccent', :search)
+                    OR public.unaccent_immutable(t.title) % public.unaccent_immutable(:search)
+            )
+    
+            -- Category visibility
+            AND c.is_active = TRUE
+            AND (
+    
+                 (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+            )
+    
             AND (:notificationEnabled IS NULL OR wt.notification_enabled = :notificationEnabled)
             AND (:categoryId IS NULL OR t.category_id = :categoryId)
             AND (:creatorId IS NULL OR t.creator_id = :creatorId)
@@ -95,11 +114,11 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
             AND (:isBookmarked IS NULL OR
                 (:isBookmarked = true AND EXISTS (
                     SELECT 1 FROM thread_bookmarks b
-                    WHERE b.thread_id = t.id AND b.user_id = :userId
+                    WHERE b.thread_id = t.id AND b.user_id = :viewerId
                     )) OR
                 (:isBookmarked = false AND NOT EXISTS (
                     SELECT 1 FROM thread_bookmarks b
-                    WHERE b.thread_id = t.id AND b.user_id = :userId
+                    WHERE b.thread_id = t.id AND b.user_id = :viewerId
                     ))
                 )
  
@@ -133,7 +152,10 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
         LIMIT :limit OFFSET :offset
     """)
     Flux<WatchThreadRecord> findPaginatedByUserId(
-            @Param("userId") UUID userId,
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("categoryId") UUID categoryId,
             @Param("creatorId") UUID creatorId,
             @Param("threadType") String threadType,
@@ -151,10 +173,28 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
     @Query("""
         SELECT COUNT(*) FROM watch_threads wt
         INNER JOIN forum_threads t ON wt.thread_id = t.id
-        WHERE wt.user_id = :userId
+        INNER JOIN forum_categories c ON t.category_id = c.id
+        WHERE wt.user_id = :viewerId
             AND t.is_deleted = false
-            AND (:search IS NULL OR
-                 LOWER(t.title) LIKE '%' || LOWER(:search) || '%')
+    
+            AND (:search IS NULL
+                    OR to_tsvector('public.english_unaccent', coalesce(t.title, ''))
+                        @@ websearch_to_tsquery('public.english_unaccent', :search)
+                    OR public.unaccent_immutable(t.title) % public.unaccent_immutable(:search)
+            )
+    
+            -- Category visibility
+            AND c.is_active = TRUE
+            AND (
+    
+                 (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+            )
+    
             AND (:notificationEnabled IS NULL OR wt.notification_enabled = :notificationEnabled)
             AND (:categoryId IS NULL OR t.category_id = :categoryId)
             AND (:creatorId IS NULL OR t.creator_id = :creatorId)
@@ -167,16 +207,19 @@ public interface WatchThreadRepository extends R2dbcRepository<WatchThreadEntity
             AND (:isBookmarked IS NULL OR
                 (:isBookmarked = true AND EXISTS (
                     SELECT 1 FROM thread_bookmarks b
-                    WHERE b.thread_id = t.id AND b.user_id = :userId
+                    WHERE b.thread_id = t.id AND b.user_id = :viewerId
                     )) OR
                 (:isBookmarked = false AND NOT EXISTS (
                     SELECT 1 FROM thread_bookmarks b
-                    WHERE b.thread_id = t.id AND b.user_id = :userId
+                    WHERE b.thread_id = t.id AND b.user_id = :viewerId
                     ))
                 )
     """)
     Mono<Long> countByUserIdWithFilters(
-            @Param("userId") UUID userId,
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("categoryId") UUID categoryId,
             @Param("creatorId") UUID creatorId,
             @Param("threadType") String threadType,
