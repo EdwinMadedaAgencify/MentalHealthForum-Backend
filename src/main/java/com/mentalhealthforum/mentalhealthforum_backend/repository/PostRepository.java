@@ -25,27 +25,47 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
     // ==================== PAGINATED QUERIES ====================
 
     @Query("""
-            SELECT * FROM forum_posts
-            WHERE (:threadId IS NULL OR thread_id = :threadId::uuid)
-                AND (:authorId IS NULL OR author_id = :authorId::uuid)
-                AND (:flaggedForReview IS NULL OR flagged_for_review = :flaggedForReview)
-                AND (:parentPostId IS NULL OR parent_post_id = :parentPostId::uuid)
-                AND (:postType IS NULL OR post_type = :postType::post_type_enum)
+            SELECT * FROM forum_posts p
+            INNER JOIN forum_threads t ON p.thread_id = t.id
+            INNER JOIN forum_categories c ON t.category_id = c.id
+            WHERE (:threadId IS NULL OR p.thread_id = :threadId::uuid)
+                AND (:authorId IS NULL OR p.author_id = :authorId::uuid)
+                AND (:flaggedForReview IS NULL OR p.flagged_for_review = :flaggedForReview)
+                AND (:parentPostId IS NULL OR p.parent_post_id = :parentPostId::uuid)
+                AND (:postType IS NULL OR p.post_type = :postType::post_type_enum)
                 AND (:hasContentWarning IS NULL OR
                     (CASE WHEN :hasContentWarning = true
-                          THEN content_warning_type != 'NONE'
-                          ELSE content_warning_type = 'NONE' END))
-                AND (:search IS NULL OR
-                    LOWER(content) LIKE '%' || LOWER(:search) || '%')
-                AND is_deleted = :isDeleted
+                          THEN p.content_warning_type != 'NONE'
+                          ELSE p.content_warning_type = 'NONE' END))
+    
+                AND (:search IS NULL
+                        OR to_tsvector('public.english_unaccent', coalesce(p.content, ''))
+                            @@ websearch_to_tsquery('public.english_unaccent', :search)
+   
+                        OR public.unaccent_immutable(p.content) % public.unaccent_immutable(:search)
+                )
+    
+                -- Category visibility
+                AND c.is_active = TRUE
+                AND (
+    
+                     (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+                )
+    
+                AND p.is_deleted = :isDeleted
                 ORDER BY
                     -- 1. Sort by selected field and direction: DESC
                     CASE :sortDirection
                         WHEN 'DESC' THEN
                             CASE :sortBy
-                                WHEN 'created_at' THEN created_at::text
-                                WHEN 'updated_at' THEN updated_at::text
-                                ELSE created_at::text
+                                WHEN 'created_at' THEN p.created_at::text
+                                WHEN 'updated_at' THEN p.updated_at::text
+                                ELSE p.created_at::text
                             END
                         ELSE NULL
                     END DESC NULLS LAST,
@@ -54,18 +74,22 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
                     CASE :sortDirection
                         WHEN 'ASC' THEN
                             CASE :sortBy
-                                WHEN 'created_at' THEN created_at::text
-                                WHEN 'updated_at' THEN updated_at::text
-                                ELSE created_at::text
+                                WHEN 'created_at' THEN p.created_at::text
+                                WHEN 'updated_at' THEN p.updated_at::text
+                                ELSE p.created_at::text
                             END
                         ELSE NULL
                     END ASC NULLS FIRST,
     
                     -- 3. Tie breaker for deterministic ordering
-                    id
+                    p.id
                 LIMIT :limit OFFSET :offset
     """)
     Flux<PostEntity> findPostsPaginated(
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("threadId") UUID threadId,
             @Param("authorId") UUID authorId,
             @Param("parentPostId") UUID parentPostId,
@@ -81,21 +105,45 @@ public interface PostRepository extends R2dbcRepository<PostEntity, UUID> {
     );
 
     @Query("""
-            SELECT COUNT(*) FROM forum_posts
-            WHERE (:threadId IS NULL OR thread_id = :threadId::uuid)
-                AND (:authorId IS NULL OR author_id = :authorId::uuid)
-                AND (:flaggedForReview IS NULL OR flagged_for_review = :flaggedForReview)
-                AND (:parentPostId IS NULL OR parent_post_id = :parentPostId::uuid)
-                AND (:postType IS NULL OR post_type = :postType::post_type_enum)
+            SELECT COUNT(*) FROM forum_posts p
+            INNER JOIN forum_threads t ON p.thread_id = t.id
+            INNER JOIN forum_categories c ON t.category_id = c.id
+            WHERE (:threadId IS NULL OR p.thread_id = :threadId::uuid)
+                AND (:authorId IS NULL OR p.author_id = :authorId::uuid)
+                AND (:flaggedForReview IS NULL OR p.flagged_for_review = :flaggedForReview)
+                AND (:parentPostId IS NULL OR p.parent_post_id = :parentPostId::uuid)
+                AND (:postType IS NULL OR p.post_type = :postType::post_type_enum)
                 AND (:hasContentWarning IS NULL OR
                     (CASE WHEN :hasContentWarning = true
-                          THEN content_warning_type != 'NONE'
-                          ELSE content_warning_type = 'NONE' END))
-                AND (:search IS NULL OR
-                    LOWER(content) LIKE '%' || LOWER(:search) || '%')
-                AND is_deleted = :isDeleted
+                          THEN p.content_warning_type != 'NONE'
+                          ELSE p.content_warning_type = 'NONE' END))
+
+                AND (:search IS NULL
+                        OR to_tsvector('public.english_unaccent', coalesce(p.content, ''))
+                            @@ websearch_to_tsquery('public.english_unaccent', :search)
+   
+                        OR public.unaccent_immutable(p.content) % public.unaccent_immutable(:search)
+                )
+    
+                -- Category visibility
+                AND c.is_active = TRUE
+                AND (
+    
+                     (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                     OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+                )
+ 
+                AND p.is_deleted = :isDeleted
     """)
     Mono<Long> countPostsWithFilters(
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("threadId") UUID threadId,
             @Param("authorId") UUID authorId,
             @Param("parentPostId") UUID parentPostId,

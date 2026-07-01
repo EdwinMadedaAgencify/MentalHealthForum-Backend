@@ -116,7 +116,7 @@ public class PostServiceImpl implements PostService {
         }
 
         return executeGetPostsQuery(page, size, threadId, authorId, parentPostId, postType, hasContentWarning, isDeleted,
-                search, sortBy, sortDirection);
+                search, sortBy, sortDirection, viewerContext);
     }
 
     @Override
@@ -343,7 +343,8 @@ public class PostServiceImpl implements PostService {
             Boolean isDeleted,
             String search,
             String sortBy,
-            String sortDirection
+            String sortDirection,
+            ViewerContext viewerContext
     ) {
         if (page < 0 || size <= 0) {
             log.error("Invalid pagination parameters: page = {}, size = {}", page, size);
@@ -351,6 +352,11 @@ public class PostServiceImpl implements PostService {
         }
 
         int offset = page * size;
+
+        UUID viewerId = UUID.fromString(viewerContext.getUserId());
+        boolean isAdmin = viewerContext.isAdmin();
+        boolean isModeratorOrAdmin = viewerContext.isModeratorOrAdmin();
+        boolean isVerified = viewerContext.isVerified();
 
         String effectivePostType = (postType == null) ? null : postType.name();
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
@@ -360,6 +366,8 @@ public class PostServiceImpl implements PostService {
         // Note: flaggedForReview is not currently used as a filter in the service
 
         return postRepository.findPostsPaginated(
+                        viewerId,
+                        isAdmin, isModeratorOrAdmin, isVerified,
                         threadId, authorId, parentPostId,
                         effectivePostType, hasContentWarning, isDeleted, false,
                         effectiveSearch,
@@ -373,6 +381,8 @@ public class PostServiceImpl implements PostService {
 
                     return enrichPostsWithBatchData(posts)
                             .zipWith(postRepository.countPostsWithFilters(
+                                    viewerId,
+                                    isAdmin, isModeratorOrAdmin, isVerified,
                                     threadId, authorId, parentPostId,
                                     effectivePostType, hasContentWarning, isDeleted, false,
                                     effectiveSearch))
