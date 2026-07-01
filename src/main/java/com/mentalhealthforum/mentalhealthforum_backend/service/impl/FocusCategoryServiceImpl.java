@@ -91,13 +91,20 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
         }
 
         int offset = page * size;
-        UUID userId = UUID.fromString(viewerContext.getUserId());
+
+        UUID viewerId = UUID.fromString(viewerContext.getUserId());
+        boolean isAdmin = viewerContext.isAdmin();
+        boolean isModeratorOrAdmin = viewerContext.isModeratorOrAdmin();
+        boolean isVerified = viewerContext.isVerified();
+
         String effectiveSearch = (search == null || search.isBlank())? null : search.trim();
         FocusCategorySortField sortByField = validateAndNormalizeSortBy(sortBy);
         String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
 
         return focusCategoryRepository.findPaginatedByUserId(
-                        userId, notificationEnabled,
+                        viewerId,
+                        isAdmin, isModeratorOrAdmin, isVerified,
+                        notificationEnabled,
                         effectiveSearch,
                         sortByField.getValue(), effectiveSortDirection,
                         size, offset)
@@ -109,7 +116,9 @@ public class FocusCategoryServiceImpl implements FocusCategoryService {
 
                     return enrichFocusCategoriesWithBatchData(focusCategories)
                             .zipWith(focusCategoryRepository.countByUserIdWithFilters(
-                                    userId, notificationEnabled,
+                                    viewerId,
+                                    isAdmin, isModeratorOrAdmin, isVerified,
+                                    notificationEnabled,
                                     effectiveSearch))
                             .map(tuple -> {
                                 List<FocusCategoryResponse> content = tuple.getT1();

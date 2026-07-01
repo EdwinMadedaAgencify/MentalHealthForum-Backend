@@ -23,11 +23,29 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
     @Query("""
         SELECT fc.* FROM focus_categories fc
         INNER JOIN forum_categories C ON fc.category_id = c.id
-        WHERE fc.user_id = :userId
-            AND (:search IS NULL OR
-                 LOWER(c.name) LIKE '%' || LOWER(:search) || '%' OR
-                 LOWER(c.description) LIKE '%' || LOWER(:search) || '%'
-                )
+        WHERE fc.user_id = :viewerId
+   
+            -- Search: FTS + Trigram (User existing GIN index)
+            AND (:search IS NULL
+    
+                OR to_tsvector('public.english_unaccent', coalesce(c.name, '') || ' ' || coalesce(c.description, ''))
+                    @@ websearch_to_tsquery('public.english_unaccent', :search)
+
+                OR public.unaccent_immutable(c.name) % public.unaccent_immutable(:search)
+                OR public.unaccent_immutable(c.description) % public.unaccent_immutable(:search)
+            )
+    
+            AND c.is_active = TRUE
+            AND (
+    
+                 (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+            )
+    
             AND (:notificationEnabled IS NULL OR fc.notification_enabled = :notificationEnabled)
         ORDER BY
             CASE :sortDirection
@@ -52,7 +70,10 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
         LIMIT :limit OFFSET :offset
     """)
     Flux<FocusCategoryEntity>findPaginatedByUserId(
-        @Param("userId") UUID userId,
+        @Param("viewerId") UUID viewerId,
+        @Param("isAdmin") boolean isAdmin,
+        @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+        @Param("isVerified") boolean isVerified,
         @Param("notificationEnabled") Boolean notificationEnabled,
         @Param("search") String search,
         @Param("sortBy") String sortBy,
@@ -64,15 +85,36 @@ public interface FocusCategoryRepository extends R2dbcRepository<FocusCategoryEn
     @Query("""
         SELECT COUNT(*) FROM focus_categories fc
         INNER JOIN forum_categories C ON fc.category_id = c.id
-        WHERE fc.user_id = :userId
-            AND (:search IS NULL OR
-                 LOWER(c.name) LIKE '%' || LOWER(:search) || '%' OR
-                 LOWER(c.description) LIKE '%' || LOWER(:search) || '%'
-                )
+        WHERE fc.user_id = :viewerId
+   
+            -- Search: FTS + Trigram (User existing GIN index)
+            AND (:search IS NULL
+    
+                OR to_tsvector('public.english_unaccent', coalesce(c.name, '') || ' ' || coalesce(c.description, ''))
+                    @@ websearch_to_tsquery('public.english_unaccent', :search)
+
+                OR public.unaccent_immutable(c.name) % public.unaccent_immutable(:search)
+                OR public.unaccent_immutable(c.description) % public.unaccent_immutable(:search)
+            )
+
+            AND c.is_active = TRUE
+            AND (
+    
+                 (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+            )
+  
             AND (:notificationEnabled IS NULL OR fc.notification_enabled = :notificationEnabled)
     """)
     Mono<Long> countByUserIdWithFilters(
-            @Param("userId") UUID userId,
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("notificationEnabled") Boolean notificationEnabled,
             @Param("search") String search
     );
