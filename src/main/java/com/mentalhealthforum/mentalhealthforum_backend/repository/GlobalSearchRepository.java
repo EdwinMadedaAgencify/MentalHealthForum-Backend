@@ -1,7 +1,7 @@
 package com.mentalhealthforum.mentalhealthforum_backend.repository;
 
+import com.mentalhealthforum.mentalhealthforum_backend.dto.ViewerContext;
 import com.mentalhealthforum.mentalhealthforum_backend.dto.discovery.GlobalSearchResult;
-import com.mentalhealthforum.mentalhealthforum_backend.service.impl.GlobalSearchServiceImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
@@ -28,23 +28,42 @@ public class GlobalSearchRepository {
         this.databaseClient = databaseClient;
     }
 
-    public Mono<Slice<GlobalSearchResult>> executeLiveSearch(String rawQuery, String sortBy, Pageable pageable){
+    public Mono<Slice<GlobalSearchResult>> executeLiveSearch(
+            String rawQuery,
+            String sortBy,
+            Pageable pageable,
+            ViewerContext viewerContext){
 
-        // Safe, optimized outer execution sorting valuables
-        String orderByClause;
+        // High performance Java Pre-evaluation
+        UUID viewerId = null;
+        boolean isAdmin = false;
+        boolean isModeratorOrAdmin = false;
+        boolean isVerified = false;
+
+        if(viewerContext != null && viewerContext.getUserId() != null){
+           try{
+               viewerId = UUID.fromString(viewerContext.getUserId());
+               isAdmin = viewerContext.isAdmin();
+               isModeratorOrAdmin = viewerContext.isModeratorOrAdmin();
+               isVerified = viewerContext.isTrustedMember() || viewerContext.isPeerSupporter() || viewerContext.isAdmin();
+           } catch (IllegalArgumentException e){
+               log.error("Failed to parse viewer keycloak UUID string from context: {}", viewerContext.getUserId());
+           }
+        }
+        
+        // Resolve sorting boundaries. Safe, optimized outer execution sorting valuables
+        String orderByClause= "search_score DESC, header ASC"; // relevance
         if("recent".equalsIgnoreCase(sortBy)){
             orderByClause = "last_activity_at DESC NULLS LAST, header ASC";
         }
-        else { // relevance
-            orderByClause = "search_score DESC, header ASC";
-        }
 
-        // Entirely consolidated core search query over active relational states
+        // Entirely consolidated security core search query over active relational states
         String coreSearchUnionSql = """
                 -- PERFORMANCE OPTIMIZATION: websearch_to_tsquery called ONCE via CTE
  
                 WITH query_token AS (
-                    SELECT websearch_to_tsquery('english', :query) AS tsquery
+                    SELECT websearch_to_tsquery('public.english_unaccent', :query) AS tsquery,
+                           websearch_to_tsquery('public.simple_unaccent', :query) AS tsquery_simple
                 )
                 
                 -- 1. THREADS
@@ -52,19 +71,40 @@ public class GlobalSearchRepository {
                     t.id AS entity_id,
                     'THREAD'::TEXT AS entity_type,
                     t.title AS header,
-                    LEFT(t.title, 200)::TEXT AS body_preview,
+                    ts_headline('public.english_unaccent', coalesce(t.title, ''), (SELECT tsquery FROM query_token), 'MaxWords=25, StartSel=<b>, StopSel=</b>')::TEXT AS body_preview,
                     ts_rank(
-                        setweight(to_tsvector('english', coalesce(t.title, '')), 'A'),
+                        setweight(to_tsvector('public.english_unaccent', coalesce(t.title, '')), 'A'),
                         (SELECT tsquery FROM query_token)
                     ) AS search_score,
                     t.last_activity_at AS last_activity_at
                 FROM forum_threads t
+                INNER JOIN forum_categories c ON t.category_id = c.id
                 WHERE t.is_deleted = FALSE
-                    AND to_tsvector('english', coalesce(t.title, '')) @@ (SELECT tsquery FROM query_token)
+                    AND to_tsvector('public.english_unaccent', coalesce(t.title, '')) @@ (SELECT tsquery FROM query_token)
                 
+                    -- Category visibility filter (same as CATEGORIES block below
+                    AND c.is_active = TRUE
+                    AND (
+                         -- PUBLIC: always visible'
+                         (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                
+                         -- MEMBERS_ONLY: viewer must be logged in
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+               
+                         -- VERIFIED_ONLY: viewer must be trusted, peer supporter or admin
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                
+                         -- MODERATORS_ONLY: viewer must be moderator or admin
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                
+                         -- ADMINS_ONLY: viewer must be moderator or admin
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+                
+                        )
+              
                 UNION ALL
                 
-                -- 2. POSTS
+                -- 2. POSTS (With Advanced contextual Snippet Surrounding Search Term)
                 SELECT
                     p.id AS entity_id,
                     'POST'::TEXT AS entity_type,
@@ -72,31 +112,55 @@ public class GlobalSearchRepository {
                         THEN 'Anonymous Reply'::VARCHAR
                         ELSE coalesce(u.display_name, 'forum_member'::VARCHAR)
                     END AS header,
-                    LEFT(p.content, 200)::TEXT AS body_preview,
+                    ts_headline('public.english_unaccent', coalesce(p.content, ''), (SELECT tsquery FROM query_token), 'MaxWords=25, MinWords=15, StartSel=<b>, StopSel=</b>')::TEXT AS body_preview,
                     ts_rank(
-                        setweight(to_tsvector('english', coalesce(p.content, '')), 'B'),
+                        setweight(to_tsvector('public.english_unaccent', coalesce(p.content, '')), 'B'),
                         (SELECT tsquery FROM query_token)
                     ) AS search_score,
                     p.created_at AS last_activity_at
                 FROM forum_posts p
                 LEFT JOIN app_users u ON p.author_id = u.keycloak_id
+                INNER JOIN forum_threads t ON p.thread_id = t.id
+                INNER JOIN forum_categories c ON t.category_id = c.id
                 WHERE p.is_deleted = FALSE
                     AND p.flagged_for_review = FALSE
-                    AND to_tsvector('english', coalesce(p.content, '')) @@ (SELECT tsquery FROM query_token)
+                    AND to_tsvector('public.english_unaccent', coalesce(p.content, '')) @@ (SELECT tsquery FROM query_token)
+              
+                    -- Thread must not be deleted
+                    AND t.is_deleted = FALSE
+               
+                    -- Category visibility (same as above)
+                    AND c.is_active = TRUE
+                    AND (
+                
+                         (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+                
+                        )
                 
                 UNION ALL
                 
-                -- 3. CATEGORIES & CATEGORY TAGS
-                
+                -- 3. CATEGORIES & CATEGORY TAGS (with privacy applied directly)
                 SELECT
                     c.id AS entity_id,
                     'CATEGORY'::TEXT AS entity_type,
                     c.name AS header,
-                    LEFT(c.description, 200)::TEXT AS body_preview,
+                    ts_headline('public.english_unaccent',
+                        CASE
+                            WHEN cat_tags.aggregated_tags IS NOT NULL
+                            THEN '[Tags: ' || coalesce(cat_tags.aggregated_tags, '') || '] ' || coalesce(c.description, '')
+                            ELSE coalesce(c.description, '')
+                        END,
+                        (SELECT tsquery FROM query_token),
+                        'MaxWords=25, StartSel=<b>, StopSel=</b>'
+                    )::TEXT AS body_preview,
                     ts_rank(
-                        setweight(to_tsvector('english', coalesce(c.name, '')), 'A') ||
-                        setweight(to_tsvector('english', coalesce(c.description, '')), 'B') ||
-                        setweight(to_tsvector('english', coalesce(cat_tags.aggregated_tags, '')), 'A'),
+                        setweight(to_tsvector('public.english_unaccent', coalesce(c.name, '')), 'A') ||
+                        setweight(to_tsvector('public.english_unaccent', coalesce(c.description, '')), 'B') ||
+                        setweight(to_tsvector('public.english_unaccent', coalesce(cat_tags.aggregated_tags, '')), 'A'),
                         (SELECT tsquery FROM query_token)
                     ) AS search_score,
                     c.created_at AS last_activity_at
@@ -109,10 +173,21 @@ public class GlobalSearchRepository {
                 ) cat_tags ON c.id = cat_tags.category_id
                 WHERE c.is_active = TRUE
                     AND (
-                        to_tsvector('english', coalesce(c.name, '')) @@ (SELECT tsquery FROM query_token) OR
-                        to_tsvector('english', coalesce(c.description, '')) @@ (SELECT tsquery FROM query_token) OR
-                        to_tsvector('english', coalesce(cat_tags.aggregated_tags, '')) @@ (SELECT tsquery FROM query_token)
+                        to_tsvector('public.english_unaccent', coalesce(c.name, '')) @@ (SELECT tsquery FROM query_token) OR
+                        to_tsvector('public.english_unaccent', coalesce(c.description, '')) @@ (SELECT tsquery FROM query_token) OR
+                        to_tsvector('public.english_unaccent', coalesce(cat_tags.aggregated_tags, '')) @@ (SELECT tsquery FROM query_token)
                     )
+               
+                    -- Category visibility (same as above)
+                    AND (
+                
+                         (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                         OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+                
+                        )
                
                 UNION ALL
                 -- 4. USER PROFILES (Display Name + Bio)
@@ -120,19 +195,47 @@ public class GlobalSearchRepository {
                     u.id AS entity_id,
                     'PROFILE'::TEXT AS entity_type,
                     u.display_name AS header,
-                    LEFT(u.bio, 200)::TEXT AS body_preview,
+                    ts_headline('public.simple_unaccent', coalesce(u.bio, ''), (SELECT tsquery_simple FROM query_token), 'MaxWords=25, StartSel=<b>, StopSel=</b>')::TEXT AS body_preview,
                     ts_rank(
-                        setweight(to_tsvector('english', coalesce(u.display_name, '')), 'A') ||
-                        setweight(to_tsvector('english', coalesce(u.bio, '')), 'B'),
-                        (SELECT tsquery FROM query_token)
+                        setweight(to_tsvector('public.simple_unaccent', coalesce(u.display_name, '')), 'A') ||
+                        setweight(to_tsvector('public.simple_unaccent', coalesce(u.bio, '')), 'B'),
+                        (SELECT tsquery_simple FROM query_token)
                     ) AS search_score,
                     u.last_active_at AS last_activity_at
                 FROM app_users u
                 WHERE u.is_active = TRUE
                     AND u.account_deletion_requested_at IS NULL
                     AND (
-                          to_tsvector('english', coalesce(u.display_name, '')) @@ (SELECT tsquery FROM query_token) OR
-                          to_tsvector('english', coalesce(u.bio, '')) @@ (SELECT tsquery FROM query_token)
+                          to_tsvector('public.simple_unaccent', coalesce(u.display_name, '')) @@ (SELECT tsquery_simple FROM query_token) OR
+                          to_tsvector('public.simple_unaccent', coalesce(u.bio, '')) @@ (SELECT tsquery_simple FROM query_token)
+                    )
+                
+                    -- Privacy filter
+                    AND (
+                        -- MEMBERS_ONLY: viewer must be logged in
+                        (u.profile_visibility = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                
+                        -- PRIVATE: owner, admin, moderator, or mutual connection
+                        OR(u.profile_visibility = 'PRIVATE' AND (
+                            -- Owner
+                            u.keycloak_id = :viewerId
+                
+                            -- Admin or moderator
+                            OR :isAdmin = TRUE
+                            OR :isModeratorOrAdmin = TRUE
+               
+                            -- Mutual connection (ACCEPTED)
+                            OR EXISTS (
+                                SELECT 1 FROM user_connections uc
+                                WHERE (
+                                    (uc.user_1 = u.keycloak_id AND uc.user_2 = :viewerId) OR
+                                    (uc.user_1 = :viewerId AND uc.user_2 = u.keycloak_id)
+                                )
+                                AND uc.status = 'ACCEPTED'::connection_status_enum
+                            )
+              
+                        ))
+                
                     )
                 """;
 
@@ -152,11 +255,26 @@ public class GlobalSearchRepository {
         // Log the full SQL being executed
         log.debug("SQL: {}", dataSql);
 
-
-        return databaseClient.sql(dataSql)
+        // Secure R2DBC Null-safe Parameters Binding Execution
+        DatabaseClient.GenericExecuteSpec executeSpec = databaseClient.sql(dataSql)
                 .bind("query", rawQuery)
+                .bind("isAdmin", isAdmin)
+                .bind("isModeratorOrAdmin", isModeratorOrAdmin)
+                .bind("isVerified", isVerified)
                 .bind("limit", fetchSize)
-                .bind("offset", (int) pageable.getOffset())
+                .bind("offset", (int) pageable.getOffset());
+
+
+        // Defend against R2DBC primitive null column crashes via driver fallback assignment
+        if(viewerId != null){
+            executeSpec = executeSpec.bind("viewerId", viewerId);
+        }
+        else{
+            executeSpec = executeSpec.bindNull("viewerId", UUID.class);
+        }
+
+
+        return executeSpec
                 .map((row, metadata) -> {
                     LocalDateTime dateTime = row.get("last_activity_at", LocalDateTime.class);
                     Instant instant = (dateTime != null)? dateTime.toInstant(ZoneOffset.UTC) : null;

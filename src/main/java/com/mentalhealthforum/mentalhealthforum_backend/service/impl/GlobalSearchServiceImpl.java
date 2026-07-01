@@ -37,6 +37,6 @@ public class GlobalSearchServiceImpl implements GlobalSearchService {
         // Validate pagination inputs to prevent memory allocation attacks
        int validatedSize = Math.clamp(size, 1, 50);
 
-        return globalSearchRepository.executeLiveSearch(query.trim(), sortBy, PageRequest.of(page, validatedSize));
+        return globalSearchRepository.executeLiveSearch(query.trim(), sortBy, PageRequest.of(page, validatedSize), viewerContext);
     }
 }
