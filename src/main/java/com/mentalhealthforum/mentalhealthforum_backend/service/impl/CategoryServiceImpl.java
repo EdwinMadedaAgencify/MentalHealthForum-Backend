@@ -474,9 +474,12 @@ public class CategoryServiceImpl implements CategoryService {
         }
 
         int offset = page * size;
-        UUID currentUserId = UUID.fromString(viewerContext.getUserId());
-        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
+        UUID viewerId = UUID.fromString(viewerContext.getUserId());
+        boolean isAdmin = viewerContext.isAdmin();
+        boolean isModeratorOrAdmin = viewerContext.isModeratorOrAdmin();
+        boolean isVerified = viewerContext.isVerified();
 
+        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
         CategorySortField sortByField = validateAndNormalizeSortBy(sortBy);
         String effectiveSortDirection = sortByField.determineSortDirection(sortDirection);
         Boolean effectiveIsParent = (parentCategoryId != null && isParent != null) ? null : isParent;
@@ -487,7 +490,8 @@ public class CategoryServiceImpl implements CategoryService {
         }
 
         Flux<CategoryEntity> categoriesFlux = categoryRepository.findAllCategoriesPaginated(
-                currentUserId,
+                viewerId,
+                isAdmin, isModeratorOrAdmin, isVerified,
                 tagId, parentCategoryId,
                 effectiveIsParent, isActive, isFocused,
                 effectiveSearch,
@@ -496,7 +500,8 @@ public class CategoryServiceImpl implements CategoryService {
         );
 
         Mono<Long> totalCount = categoryRepository.countAllCategoriesWithFilters(
-                currentUserId,
+                viewerId,
+                isAdmin, isModeratorOrAdmin, isVerified,
                 tagId, parentCategoryId,
                 effectiveIsParent, isActive, isFocused,
                 effectiveSearch);

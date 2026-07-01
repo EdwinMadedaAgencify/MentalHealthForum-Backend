@@ -34,6 +34,7 @@ public class UserStatusController {
      * Kept for backward compatibility. Will be removed in a future version.
      */
     @GetMapping
+    @Deprecated
     public Mono<ResponseEntity<StandardSuccessResponse<UserStatusResponse>>> getUserStatus(
             @AuthenticationPrincipal Jwt jwt
     ){

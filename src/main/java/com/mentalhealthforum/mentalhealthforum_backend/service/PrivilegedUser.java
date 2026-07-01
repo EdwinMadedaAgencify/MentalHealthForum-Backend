@@ -19,19 +19,19 @@ public interface PrivilegedUser {
     Set<String> getGroups();
 
     // --- Helper Methods with Default Implementations ---
-    public default boolean hasRole(RealmRole role){
+    default boolean hasRole(RealmRole role){
         Set<String> roles = getRoles();
         return roles != null && roles.contains(role.getRoleName());
     }
 
-    public default boolean isInGroup(GroupPath group){
+    default boolean isInGroup(GroupPath group){
         Set<String> groups = getGroups();
         if(groups == null || group == null) return false;
         return groups.stream().anyMatch(groupItem -> GroupPath.isInGroup(groupItem, group));
     }
 
     // Check if user has any of the specified roles
-    public default boolean hasAnyRole(RealmRole... rolesToCheck){
+    default boolean hasAnyRole(RealmRole... rolesToCheck){
         Set<String> roles = getRoles();
         if(roles == null || roles.isEmpty()) return false;
         for(RealmRole role: rolesToCheck){
@@ -42,7 +42,7 @@ public interface PrivilegedUser {
         return false;
     }
 
-    public default boolean isInAnyGroup(GroupPath... groupsToCheck){
+    default boolean isInAnyGroup(GroupPath... groupsToCheck){
         Set<String> groups = getGroups();
         if(groups == null || groups.isEmpty()) return false;
         for(GroupPath group: groupsToCheck){
@@ -54,38 +54,44 @@ public interface PrivilegedUser {
     }
 
     // --- Custom Computed Property Getters ---
-    public default boolean isAdmin(){ return hasRole(RealmRole.ADMIN) || isInGroup(GroupPath.ADMINISTRATORS);}
+    default boolean isAdmin(){ return hasRole(RealmRole.ADMIN) || isInGroup(GroupPath.ADMINISTRATORS);}
 
-    public default boolean isModerator(){
+    default boolean isModerator(){
         return hasRole(RealmRole.MODERATOR) || isInGroup(GroupPath.MODERATORS);
     }
 
-    public default boolean isPeerSupporter(){
+    default boolean isPeerSupporter(){
         return hasRole(RealmRole.PEER_SUPPORTER) ||
                 isInGroup(GroupPath.MEMBERS_TRUSTED) ||
                 isInGroup(GroupPath.MODERATORS_PROFESSIONAL);
     }
 
-    public default boolean isTrustedMember(){
+    default boolean isTrustedMember(){
         return hasRole(RealmRole.TRUSTED_MEMBER) ||
                 isInGroup(GroupPath.MEMBERS_ACTIVE) ||
                 isInGroup(GroupPath.MEMBERS_TRUSTED);
     }
 
-    public default boolean isForumMember(){
+    default boolean isForumMember(){
         return hasRole(RealmRole.FORUM_MEMBER) ||
                 (getGroups() != null && !getGroups().isEmpty());
     }
 
-    public default boolean isPrivileged() {
+    default boolean isVerified() {
+        return isTrustedMember() || isPeerSupporter() || isAdmin();
+    }
+
+    default boolean isPrivileged() {
         return isAdmin() || isModerator() || isPeerSupporter();
     }
 
-    public default boolean isModeratorOrAdmin() {
+    default boolean isModeratorOrAdmin() {
         return isAdmin() || isModerator();
     }
+    
+    
 
-    public default OnboardingPolicy.Result checkOnboardingPolicy(OnboardingProfileData onboardingProfileData) {
+    default OnboardingPolicy.Result checkOnboardingPolicy(OnboardingProfileData onboardingProfileData) {
         List<OnboardingPolicy.Violation> violations = new ArrayList<>();
         List<OnboardingPolicy.FieldRequirement> requirements = new ArrayList<>();
 

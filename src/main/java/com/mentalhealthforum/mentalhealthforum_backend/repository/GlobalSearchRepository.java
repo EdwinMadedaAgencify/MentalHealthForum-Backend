@@ -45,7 +45,7 @@ public class GlobalSearchRepository {
                viewerId = UUID.fromString(viewerContext.getUserId());
                isAdmin = viewerContext.isAdmin();
                isModeratorOrAdmin = viewerContext.isModeratorOrAdmin();
-               isVerified = viewerContext.isTrustedMember() || viewerContext.isPeerSupporter() || viewerContext.isAdmin();
+               isVerified = viewerContext.isVerified();
            } catch (IllegalArgumentException e){
                log.error("Failed to parse viewer keycloak UUID string from context: {}", viewerContext.getUserId());
            }

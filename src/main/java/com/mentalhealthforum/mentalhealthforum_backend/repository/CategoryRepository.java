@@ -103,6 +103,16 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
     
             AND (:isActive IS NULL OR c.is_active = :isActive)
     
+            AND (
+    
+                 (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+                 OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+    
+            )
+    
             -- Tag filter using centralised tags
             AND (:tagId IS NULL OR EXISTS (
                 SELECT 1 FROM category_tag_assignments a
@@ -113,11 +123,11 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
             AND (:isFocused IS NULL OR
                 (:isFocused = true AND EXISTS (
                     SELECT 1 FROM focus_categories fc
-                    WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+                    WHERE fc.category_id = c.id AND fc.user_id = :viewerId
                 )) OR
                 (:isFocused = false AND NOT EXISTS (
                     SELECT 1 FROM focus_categories fc
-                    WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+                    WHERE fc.category_id = c.id AND fc.user_id = :viewerId
                 ))
         )
     
@@ -146,7 +156,10 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
         LIMIT :limit OFFSET :offset
     """)
     Flux<CategoryEntity> findAllCategoriesPaginated(
-            @Param("currentUserId") UUID currentUserId,
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("tagId") UUID tagId,
             @Param("parentCategoryId") UUID parentCategoryId,
             @Param("isParent") Boolean isParent,
@@ -177,6 +190,16 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
 
         AND (:isActive IS NULL OR c.is_active = :isActive)
     
+        AND (
+
+             (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'PUBLIC')
+             OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MEMBERS_ONLY' AND :viewerId IS NOT NULL)
+             OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'VERIFIED_ONLY' AND :isVerified = TRUE)
+             OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'MODERATORS_ONLY' AND :isModeratorOrAdmin = TRUE)
+             OR (COALESCE(c.participation_requirements ->> 'viewAccess', 'MEMBERS_ONLY') = 'ADMINS_ONLY' AND :isAdmin = TRUE)
+
+        )
+    
         -- Tag filter using centralised tags
         AND (:tagId IS NULL OR EXISTS (
             SELECT 1 FROM category_tag_assignments a
@@ -187,16 +210,19 @@ public interface CategoryRepository extends R2dbcRepository<CategoryEntity, UUID
         AND (:isFocused IS NULL OR
             (:isFocused = true AND EXISTS (
                 SELECT 1 FROM focus_categories fc
-                WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+                WHERE fc.category_id = c.id AND fc.user_id = :viewerId
             )) OR
             (:isFocused = false AND NOT EXISTS (
                 SELECT 1 FROM focus_categories fc
-                WHERE fc.category_id = c.id AND fc.user_id = :currentUserId
+                WHERE fc.category_id = c.id AND fc.user_id = :viewerId
             ))
             )
     """)
     Mono<Long> countAllCategoriesWithFilters(
-            @Param("currentUserId") UUID currentUserId,
+            @Param("viewerId") UUID viewerId,
+            @Param("isAdmin") boolean isAdmin,
+            @Param("isModeratorOrAdmin") boolean isModeratorOrAdmin,
+            @Param("isVerified") boolean isVerified,
             @Param("tagId") UUID tagId,
             @Param("parentCategoryId") UUID parentCategoryId,
             @Param("isParent") Boolean isParent,
