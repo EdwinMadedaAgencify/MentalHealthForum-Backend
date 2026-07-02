@@ -57,9 +57,16 @@ public interface CategoryTagRepository extends R2dbcRepository<CategoryTagEntity
 
     @Query("""
         SELECT t.* FROM category_tags t
-        WHERE (:search IS NULL OR
-            LOWER(t.name) LIKE '%' || LOWER(:search) || '%' OR
-            LOWER(t.description) LIKE '%' || LOWER(:search) || '%')
+        WHERE (:search IS NULL
+
+                OR to_tsvector('public.english_unaccent', coalesce(t.name, '') || ' ' || coalesce(t.description, ''))
+                    @@ websearch_to_tsquery('public.english_unaccent', :search)
+    
+                OR public.unaccent_immutable(t.name) % public.unaccent_immutable(:search)
+    
+                OR public.unaccent_immutable(t.description) % public.unaccent_immutable(:search)
+    
+        )
     
         ORDER BY
             CASE :sortDirection
@@ -95,9 +102,16 @@ public interface CategoryTagRepository extends R2dbcRepository<CategoryTagEntity
     
     @Query("""
         SELECT COUNT(*) FROM category_tags t
-        WHERE (:search IS NULL OR
-            LOWER(t.name) LIKE '%' || LOWER(:search) || '%' OR
-            LOWER(t.description) LIKE '%' || LOWER(:search) || '%')
+        WHERE (:search IS NULL
+
+                OR to_tsvector('public.english_unaccent', coalesce(t.name, '') || ' ' || coalesce(t.description, ''))
+                    @@ websearch_to_tsquery('public.english_unaccent', :search)
+    
+                OR public.unaccent_immutable(t.name) % public.unaccent_immutable(:search)
+    
+                OR public.unaccent_immutable(t.description) % public.unaccent_immutable(:search)
+    
+        )
     """)
     Mono<Long> countSearchTags(
             @Param("search") String search
